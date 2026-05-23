@@ -15,13 +15,21 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Install Bubblewrap CLI
         run: npm install -g @bubblewrap/cli
 
       - name: Build APK
         run: |
-          bubblewrap init --manifest="https://raw.githubusercontent.com/hukerlichnoe-eng/Pril/main/manifest.json" --meta=noop --directory=./build
+          # Используем ключ --yes, чтобы bubblewrap заполнил все настройки по умолчанию сам
+          bubblewrap init --manifest="https://raw.githubusercontent.com/hukerlichnoe-eng/Pril/main/manifest.json" --directory=./build --yes
           cd build
-          bubblewrap build --acceptToS
+          # Генерируем цифровые ключи для подписи APK в автоматическом режиме
+          bubblewrap build --acceptToS --password="supersecretpassword123" --keypassword="supersecretpassword123"
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: build/*.apk
