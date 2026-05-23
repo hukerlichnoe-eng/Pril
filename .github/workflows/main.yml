@@ -1,4 +1,5 @@
 name: Build Android APK
+
 on:
   push:
     branches:
@@ -12,24 +13,32 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 20   # не 24 – bubblewrap стабильнее на 20
 
       - name: Install Bubblewrap CLI
         run: npm install -g @bubblewrap/cli
 
       - name: Build APK
         run: |
-          # Используем ключ --yes, чтобы bubblewrap заполнил все настройки по умолчанию сам
-          bubblewrap init --manifest="https://raw.githubusercontent.com/hukerlichnoe-eng/Pril/main/manifest.json" --directory=./build --yes
+          # Инициализация с локальным манифестом
+          bubblewrap init --manifest=manifest.json --directory=./build --yes
           cd build
-          # Генерируем цифровые ключи для подписи APK в автоматическом режиме
+          # Генерация ключа (один раз, но для CI придётся делать при каждой сборке)
+          bubblewrap generate-key --password="supersecretpassword123"
+          # Сборка с подписью
           bubblewrap build --acceptToS --password="supersecretpassword123" --keypassword="supersecretpassword123"
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: build/*.apk
+          path: build/app-release.apk   # точное имя файла после сборки
