@@ -1,4 +1,4 @@
-name: Build Android APK (PWA)
+name: Build Android APK
 on:
   push:
     branches:
@@ -15,13 +15,13 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-size: 20
+          node-version: 20
 
       - name: Install Bubblewrap CLI
         run: npm install -g @bubblewrap/cli
 
-      - name: Build APK using PWABuilder Action
-        uses: pwa-builder/pwa-starter-action@v1
-        with:
-          # Ссылка на ваш manifest.json (замените юзернейм на свой, если он отличается)
-          manifest-url: 'https://raw.githubusercontent.com/hukerlichnoe-eng/Pril/main/manifest.json'
+      - name: Build APK
+        run: |
+          bubblewrap init --manifest="https://raw.githubusercontent.com/hukerlichnoe-eng/Pril/main/manifest.json" --meta=noop --directory=./build
+          cd build
+          bubblewrap build --acceptToS
