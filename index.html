@@ -2,689 +2,344 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#121212">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Помощник Машиниста БЧ</title>
-    <link rel="manifest" href="manifest.json">
-    <link rel="icon" href="icon-192.png" sizes="192x192">
-    <link rel="apple-touch-icon" href="icon-192.png">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         :root {
-            --bg: #121212; --card: #1e1e1e; --accent: #00adb5;
-            --text: #eeeeee; --border: #444; --danger: #ff4141;
-            --success: #4caf50; --warning: #ffea00;
-            --highlight-bg: #2d3748; --highlight-border: #4299e1;
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --accent-color: #00adb5;
+            --text-color: #eeeeee;
+            --highlight-bg: #2d3748;
+            --highlight-border: #4299e1;
         }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--bg); color: var(--text); padding-bottom: 60px;
-            overscroll-behavior: none;
-        }
-        .screen { display: none; padding: 10px; min-height: 100vh; }
+        body { margin: 0; font-family: sans-serif; background: var(--bg-color); color: var(--text-color); padding-bottom: 70px; }
+        .screen { display: none; padding: 10px; box-sizing: border-box; }
         .screen.active { display: block; }
-        .card {
-            background: var(--card); padding: 15px; border-radius: 10px;
-            margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-        }
-        h2, h3 { color: var(--accent); margin-bottom: 10px; }
-        h2 { font-size: 20px; } h3 { font-size: 16px; }
-
+        .card { background: var(--card-bg); padding: 15px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        h2, h3 { margin-top: 0; color: var(--accent-color); }
+        
+        /* Сетка и элементы форм */
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
-        label { font-size: 11px; display: block; margin-bottom: 3px; color: #aaa; }
-        input, select {
-            width: 100%; padding: 10px; background: #2d2d2d;
-            border: 1px solid var(--border); color: #fff; border-radius: 6px;
-            font-size: 14px; margin-bottom: 8px;
-        }
-        .highlight-zone {
-            border: 2px solid var(--highlight-border);
-            background: var(--highlight-bg); padding: 12px;
-            border-radius: 8px; margin: 10px 0;
-        }
-        .btn {
-            display: block; width: 100%; padding: 12px; border: none;
-            color: #fff; font-weight: bold; border-radius: 6px;
-            cursor: pointer; text-align: center; margin-top: 8px; font-size: 14px;
-        }
-        .btn-accent { background: var(--accent); color: #000; }
-        .btn-danger { background: var(--danger); }
-        .btn-success { background: var(--success); }
-        .btn-warning { background: #e67e22; }
+        label { font-size: 12px; display: block; margin-bottom: 4px; color: #b3b3b3; }
+        input, select { width: 100%; padding: 8px; background: #2d2d2d; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box; margin-bottom: 10px; }
+        .highlight-zone { border: 2px solid var(--highlight-border); background-color: var(--highlight-bg); padding: 10px; border-radius: 6px; margin-top: 10px; }
+        
+        /* Кнопки */
+        .btn { display: block; width: 100%; padding: 12px; border: none; color: white; font-weight: bold; border-radius: 4px; cursor: pointer; text-align: center; box-sizing: border-box; margin-top: 10px; }
+        .btn-accent { background: var(--accent-color); }
+        .btn-danger { background: #ff4141; }
+        .btn-share { background: #4caf50; }
+        input[type="file"] { display: none; }
 
-        .nav-bar {
-            position: fixed; bottom: 0; left: 0; width: 100%; height: 55px;
-            background: #1a1a1a; display: flex; z-index: 1000;
-            box-shadow: 0 -2px 10px rgba(0,0,0,0.6);
-        }
-        .nav-btn {
-            flex: 1; border: none; background: none; color: #888;
-            font-size: 11px; cursor: pointer; display: flex;
-            flex-direction: column; align-items: center; justify-content: center;
-        }
-        .nav-btn.active-btn { color: var(--accent); font-weight: bold; }
-        .nav-btn svg { width: 22px; height: 22px; margin-bottom: 2px; fill: currentColor; }
-
-        canvas { width: 100%; height: auto; background: #111; border-radius: 8px; border: 1px solid #333; display: block; }
-        #map { height: 300px; border-radius: 8px; border: 1px solid #333; margin-bottom: 10px; }
-
-        .badge {
-            display: inline-block; padding: 3px 8px; border-radius: 12px;
-            font-size: 11px; font-weight: bold; margin-left: 5px;
-        }
-        .badge-pro { background: var(--accent); color: #000; }
-
-        .modal {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.8); z-index: 2000; display: none;
-            align-items: center; justify-content: center;
-        }
-        .modal.active { display: flex; }
-        .modal-content {
-            background: var(--card); padding: 20px; border-radius: 12px;
-            width: 90%; max-width: 400px; max-height: 80vh; overflow-y: auto;
-        }
+        /* Навигация */
+        .nav-bar { position: fixed; bottom: 0; left: 0; width: 100%; height: 55px; background: #1e1e1e; display: flex; box-shadow: 0 -2px 10px rgba(0,0,0,0.5); z-index: 100; }
+        .nav-btn { flex: 1; border: none; background: none; color: #aaa; font-size: 12px; cursor: pointer; }
+        .nav-btn.active-btn { color: var(--accent-color); font-weight: bold; }
+        
+        canvas { background-color: #111; border: 1px solid #444; border-radius: 8px; width: 100%; height: auto; }
     </style>
 </head>
 <body>
 
-    <!-- Экран 1: Профиль и карта -->
-    <div id="screen-main" class="screen active">
+    <div id="screen-profile" class="screen active">
         <div class="card">
-            <h3>📍 Профиль пути и положение поезда</h3>
+            <h3>Профиль пути БЧ и Голосовое ведение</h3>
             <canvas id="simCanvas" width="600" height="250"></canvas>
-            <div style="display:flex; justify-content:space-between; margin-top:8px;">
-                <button class="btn btn-danger" onclick="activateTracking()">🔊 Запустить ведение</button>
-                <button class="btn btn-accent" onclick="showRouteCreator()">➕ Новый маршрут</button>
-            </div>
-            <div id="telemetry" style="margin-top:10px; font-size:13px; line-height:1.6;">
-                Ожидание запуска...
-            </div>
-        </div>
-        <div class="card">
-            <h3>🗺️ Карта участка</h3>
-            <div id="map"></div>
-            <div class="grid-2" style="margin-top:10px;">
-                <div><label>Длина поезда (м)</label><input type="number" id="trainLength" value="800" onchange="saveSettings()"></div>
-                <div><label>Макс. скорость (км/ч)</label><input type="number" id="maxSpeed" value="90" onchange="saveSettings()"></div>
-            </div>
-            <div id="route-points-list" style="font-size:12px; max-height:150px; overflow-y:auto; margin-top:5px;"></div>
+            <button class="btn btn-danger" onclick="activateAudio()">🔊 АКТИВИРОВАТЬ ГОЛОСОВОЙ ИНФОРМАТОР</button>
+            <div id="telemetry" style="margin-top:15px; font-size:14px; line-height: 1.5;">Ожидание запуска. Нажмите красную кнопку...</div>
         </div>
     </div>
 
-    <!-- Экран 2: ТУ-3 -->
+    <div id="screen-share" class="screen">
+        <div class="card">
+            <h3>Обмен ЖД маршрутами (JSON)</h3>
+            <p style="font-size: 13px; color: #ccc;">Экспортируйте текущую базу объектов в файл для коллег или загрузите файл (.json), полученный от них.</p>
+            <button class="btn btn-share" onclick="exportRoute()">⬇️ Экспортировать текущий маршрут</button>
+            <label class="btn btn-accent" for="import-file">⬆️ Импортировать маршрут из файла</label>
+            <input type="file" id="import-file" accept=".json" onchange="importRoute(this)">
+            <div id="share-status" style="margin-top:10px; text-align:center; font-size:13px; color:#aaa;"></div>
+        </div>
+    </div>
+
     <div id="screen-tu3" class="screen">
         <div class="card">
-            <h2>📋 Маршрутный лист ТУ-3</h2>
+            <h2>Маршрутный лист ТУ-3</h2>
             <div class="grid-2">
-                <div><label>Куда вызвали</label><input type="text" id="callStation" placeholder="Минск-Сорт."></div>
-                <div><label>Дата</label><input type="date" id="workDate"></div>
-            </div>
-            <div class="grid-2">
-                <div><label>Время явки</label><input type="time" id="timeYavka"></div>
-                <div><label>Время приёмки</label><input type="time" id="timePriemka"></div>
-            </div>
-            <div class="grid-2">
-                <div><label>Локомотив (серия)</label>
-                    <select id="locoSeries">
-                        <option>ВЛ80С</option><option>2ЭС5К</option><option>3ЭС5К</option>
-                        <option>2ТЭ10М</option><option>2ТЭ116</option><option>ТЭП70</option>
-                        <option>ЧС4Т</option><option>ЭП2К</option>
-                    </select>
+                <div>
+                    <label>Куда вызвали</label>
+                    <input type="text" id="callStation" placeholder="Минск-Сорт.">
                 </div>
-                <div><label>Номер локомотива</label><input type="text" id="locoNumber"></div>
+                <div>
+                    <label>Дата</label>
+                    <input type="date" id="workDate">
+                </div>
             </div>
             <div class="grid-2">
-                <div><label>Выезд на КП</label><input type="time" id="timeKP"></div>
-                <div><label>Сдача локомотива</label><input type="time" id="timeSdachaLoco"></div>
+                <div>
+                    <label>Время явки</label>
+                    <input type="time" id="timeYavka">
+                </div>
+                <div>
+                    <label>Сдача локомотива</label>
+                    <input type="time" id="timeSdachaLoco">
+                </div>
+            </div>
+            <div class="grid-2">
+                <div>
+                    <label>Время отпр. пасс</label>
+                    <input type="time" id="passStart">
+                </div>
+                <div>
+                    <label>Время приб. пасс</label>
+                    <input type="time" id="passEnd">
+                </div>
             </div>
             <div class="highlight-zone">
                 <h3>Данные поезда</h3>
-                <div class="grid-3">
+                <div class="grid-2">
                     <div><label>Номер поезда</label><input type="text" id="trainNum"></div>
-                    <div><label>Вес (т)</label><input type="number" id="trainWeight"></div>
-                    <div><label>Оси</label><input type="number" id="trainAxles"></div>
+                    <div><label>Вес (тонн)</label><input type="number" id="trainWeight"></div>
                 </div>
-                <div class="grid-3">
-                    <div><label>Усл. длина</label><input type="number" id="condLength"></div>
-                    <div><label>Станция отпр.</label><input type="text" id="depStation"></div>
-                    <div><label>Время отпр.</label><input type="time" id="depTime"></div>
-                </div>
-                <div class="grid-3">
-                    <div><label>Станция приб.</label><input type="text" id="arrStation"></div>
-                    <div><label>Время приб.</label><input type="time" id="arrTime"></div>
-                    <div><label>Заезд на КП</label><input type="time" id="kpArrive"></div>
-                </div>
-                <div><label>Время прохождения станций (авто)</label><textarea id="stationsPassed" rows="2" style="width:100%; background:#2d2d2d; color:#fff; border:1px solid #444; border-radius:6px; padding:8px;" readonly></textarea></div>
             </div>
-            <div class="highlight-zone" style="border-color: #e67e22;">
-                <h3>🧑‍✈️ Следование пассажиром</h3>
-                <div class="grid-2">
-                    <div><label>Номер поезда</label><input type="text" id="passTrainNum"></div>
-                    <div><label>Станция отправления</label><input type="text" id="passDep"></div>
-                </div>
-                <div class="grid-2">
-                    <div><label>Время отправления</label><input type="time" id="passStartTime"></div>
-                    <div><label>Время прибытия</label><input type="time" id="passArrTime"></div>
-                </div>
-                <div><label>Станция прибытия</label><input type="text" id="passArrStation"></div>
-            </div>
-            <button class="btn btn-accent" onclick="calculateShift()">Рассчитать смену</button>
+            <button class="btn btn-accent" onclick="calculateTime()">Рассчитать смену</button>
         </div>
         <div class="card">
-            <h3>📊 Итого за смену</h3>
-            <div id="results" style="font-size:14px; line-height:1.8;">Введите данные и нажмите «Рассчитать».</div>
-            <div style="margin-top:8px; padding:10px; background:#1a3a1a; border-radius:6px;">
-                <strong>📅 Итого за месяц:</strong> <span id="monthlyTotal">0 ч. 0 мин.</span>
-                <br><small style="color:#aaa;">(сохраняется автоматически)</small>
-            </div>
+            <h3>Итого за смену</h3>
+            <div id="results" style="font-size:14px; line-height:1.5;">Введите данные выше.</div>
         </div>
     </div>
 
-    <!-- Экран 3: Обмен маршрутами и подписка -->
-    <div id="screen-share" class="screen">
-        <div class="card">
-            <h3>🔄 Обмен маршрутами (JSON)</h3>
-            <p style="font-size:13px; color:#ccc;">Экспортируйте базу точек маршрута в файл или импортируйте от коллег.</p>
-            <button class="btn btn-success" onclick="exportRoute()">⬇️ Экспортировать текущий маршрут</button>
-            <label class="btn btn-accent" for="import-file" style="display:block; margin-top:8px;">⬆️ Импортировать маршрут</label>
-            <input type="file" id="import-file" accept=".json" onchange="importRoute(this)" style="display:none;">
-            <div id="share-status" style="margin-top:8px; text-align:center; font-size:13px;"></div>
-        </div>
-        <div class="card">
-            <h3>⭐ Подписка <span class="badge badge-pro">PRO</span></h3>
-            <p style="font-size:13px;">Бесплатно: 2 маршрута по 1 разу. Для неограниченного использования оформите подписку.</p>
-            <div style="margin:10px 0;">
-                <strong>Использовано маршрутов:</strong> <span id="routesUsed">0</span> / 2
-            </div>
-            <button class="btn btn-warning" onclick="simulateSubscription()">💳 Оформить подписку (имитация)</button>
-            <p style="font-size:11px; color:#aaa; margin-top:8px;">* Это демо-версия. В реальном приложении — Google Play Billing.</p>
-        </div>
-    </div>
-
-    <!-- Модальное окно создания маршрута -->
-    <div id="modal-route" class="modal">
-        <div class="modal-content">
-            <h3>➕ Создание нового маршрута</h3>
-            <p style="font-size:12px; color:#aaa;">Нажмите на карту, чтобы добавить точку (станцию, ограничение, нейтральную вставку или кривую).</p>
-            <div>
-                <label>Тип точки</label>
-                <select id="pointType">
-                    <option value="station">Станция</option>
-                    <option value="speed">Ограничение скорости</option>
-                    <option value="neutral">Нейтральная вставка</option>
-                    <option value="curve">Кривая R&lt;650м</option>
-                    <option value="signal">Светофор</option>
-                    <option value="km">Километровый столб</option>
-                </select>
-            </div>
-            <div>
-                <label>Название / значение (например, 60 км/ч)</label>
-                <input type="text" id="pointValue" placeholder="Минск-Пасс. или 40">
-            </div>
-            <p style="font-size:11px;">Текущая точка: <span id="newPointCoords">не выбрана</span></p>
-            <button class="btn btn-accent" onclick="addRoutePoint()">Добавить точку</button>
-            <button class="btn btn-danger" onclick="closeModal('modal-route')" style="margin-top:5px;">Закрыть</button>
-        </div>
-    </div>
-
-    <!-- Нижняя панель навигации -->
     <div class="nav-bar">
-        <button class="nav-btn active-btn" onclick="switchScreen('main', this)">
-            <svg viewBox="0 0 24 24"><path d="M12 2L2 22h20L12 2zm0 3.5L18.5 20h-13L12 5.5z"/></svg>
-            Ведение
-        </button>
-        <button class="nav-btn" onclick="switchScreen('tu3', this)">
-            <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><line x1="7" y1="8" x2="17" y2="8" stroke="currentColor" stroke-width="2"/><line x1="7" y1="12" x2="17" y2="12" stroke="currentColor" stroke-width="2"/><line x1="7" y1="16" x2="12" y2="16" stroke="currentColor" stroke-width="2"/></svg>
-            ТУ-3
-        </button>
-        <button class="nav-btn" onclick="switchScreen('share', this)">
-            <svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3" fill="currentColor"/><circle cx="6" cy="12" r="3" fill="currentColor"/><circle cx="18" cy="19" r="3" fill="currentColor"/><line x1="8.5" y1="13.5" x2="15.5" y2="17.5" stroke="currentColor" stroke-width="2"/><line x1="15.5" y1="6.5" x2="8.5" y2="10.5" stroke="currentColor" stroke-width="2"/></svg>
-            Обмен
-        </button>
+        <button class="nav-btn active-btn" onclick="switchScreen('profile', this)">Профиль</button>
+        <button class="nav-btn" onclick="switchScreen('share', this)">Обмен</button>
+        <button class="nav-btn" onclick="switchScreen('tu3', this)">ТУ-3</button>
     </div>
 
     <script>
-        // ===================== ИНИЦИАЛИЗАЦИЯ =====================
+        // НАВИГАЦИЯ ВКЛАДОК
         document.getElementById('workDate').value = new Date().toISOString().split('T')[0];
-
-        // Хранилище маршрута и настроек
-        let routePoints = JSON.parse(localStorage.getItem('routePoints') || '[]');
-        let trainX = 500; // начальное положение поезда (метры) – чтобы было видно
-        let currentSpeed = 0;
-        let lastLat = null, lastLon = null;
-        let spokenWarnings = {};
-        let map, trainMarker;
-        let trackingActive = false;
-        let stationsPassedList = [];
-        let monthlyMinutes = JSON.parse(localStorage.getItem('monthlyMinutes') || '0');
-        let routesUsedCount = JSON.parse(localStorage.getItem('routesUsedCount') || '0');
-
-        // Масштаб профиля: 1 пиксель = SCALE метров
-        const SCALE = 5; // 5 метров на пиксель
-
-        // Генерация профиля (3000 метров, но теперь масштаб уменьшен)
-        let terrain = [];
-        for (let i = 0; i < 6000; i++) { // увеличенная длина профиля
-            terrain.push(160 + Math.sin(i * 0.07) * 25 + Math.cos(i * 0.03) * 12);
-        }
-
-        // База предупреждений (индекс = сотни метров)
-        let warningsDB = {};
-        function rebuildWarningsDB() {
-            warningsDB = {};
-            routePoints.forEach((p, idx) => {
-                // Равномерно распределяем по длине профиля
-                const pos = Math.floor((idx + 1) * 15); // каждые ~1500 метров
-                if (pos < terrain.length / 100) {
-                    warningsDB[pos] = p.name;
-                }
-            });
-            // Если маршрут не задан – дефолтные объекты
-            if (routePoints.length === 0) {
-                for (let i = 6; i < 60; i += 12) warningsDB[i] = "Нейтральная вставка";
-                for (let i = 12; i < 60; i += 18) warningsDB[i] = "Кривая радиусом менее 650 м";
-            }
-        }
-        rebuildWarningsDB();
-
-        // ===================== НАВИГАЦИЯ =====================
-        function switchScreen(id, btn) {
+        
+        function switchScreen(screenId, btn) {
             document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
             document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active-btn'));
-            document.getElementById('screen-' + id).classList.add('active');
-            if (btn) btn.classList.add('active-btn');
-            if (id === 'main') {
-                setTimeout(() => {
-                    map?.invalidateSize();
-                    drawProfile(); // перерисовка после смены размера
-                }, 300);
-            }
+            document.getElementById('screen-' + screenId).classList.add('active');
+            btn.classList.add('active-btn');
         }
 
-        function closeModal(id) {
-            document.getElementById(id).classList.remove('active');
-        }
-
-        // ===================== КАРТА =====================
-        function initMap() {
-            map = L.map('map', { attributionControl: false }).setView([53.9, 27.56], 12);
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                maxZoom: 18,
-            }).addTo(map);
-            
-            trainMarker = L.circleMarker([53.9, 27.56], {
-                radius: 8,
-                color: '#ff4141',
-                fillColor: '#ff4141',
-                fillOpacity: 0.9
-            }).addTo(map).bindPopup('Поезд');
-
-            map.on('click', function(e) {
-                if (document.getElementById('modal-route').classList.contains('active')) {
-                    window.selectedLatLng = e.latlng;
-                    document.getElementById('newPointCoords').textContent = 
-                        `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`;
-                }
-            });
-
-            renderRoutePoints();
-        }
-
-        function renderRoutePoints() {
-            if (!map) return;
-            // Удаляем старые маркеры, кроме поезда
-            map.eachLayer(layer => {
-                if ((layer instanceof L.Marker || layer instanceof L.CircleMarker) && layer !== trainMarker) {
-                    map.removeLayer(layer);
-                }
-            });
-            
-            const pointColors = {
-                station: '#4caf50', speed: '#ff9800', neutral: '#ffea00',
-                curve: '#e91e63', signal: '#2196f3', km: '#9e9e9e'
-            };
-            
-            routePoints.forEach((p) => {
-                const color = pointColors[p.type] || '#fff';
-                const marker = L.circleMarker([p.lat, p.lng], {
-                    radius: 7, color: color, fillColor: color, fillOpacity: 0.8
-                }).addTo(map);
-                marker.bindPopup(`<b>${p.name}</b><br>${p.type}`);
-            });
-
-            document.getElementById('route-points-list').innerHTML = 
-                routePoints.map(p => 
-                    `<div style="margin:2px 0; color:#ccc;">• ${p.name} (${p.type})</div>`
-                ).join('') || '<span style="color:#888;">Нет точек маршрута</span>';
-        }
-
-        function showRouteCreator() {
-            if (routesUsedCount >= 2 && !localStorage.getItem('pro')) {
-                alert('Достигнут лимит бесплатных маршрутов. Оформите подписку PRO.');
-                return;
-            }
-            document.getElementById('modal-route').classList.add('active');
-            window.selectedLatLng = null;
-            document.getElementById('newPointCoords').textContent = 'Нажмите на карту';
-        }
-
-        function addRoutePoint() {
-            if (!window.selectedLatLng) {
-                alert('Сначала выберите точку на карте!');
-                return;
-            }
-            const type = document.getElementById('pointType').value;
-            const value = document.getElementById('pointValue').value || 'Без названия';
-            routePoints.push({
-                lat: window.selectedLatLng.lat,
-                lng: window.selectedLatLng.lng,
-                type: type,
-                name: value
-            });
-            localStorage.setItem('routePoints', JSON.stringify(routePoints));
-            if (routePoints.length === 1) {
-                routesUsedCount++;
-                localStorage.setItem('routesUsedCount', routesUsedCount);
-            }
-            updateRoutesUsedDisplay();
-            rebuildWarningsDB();
-            renderRoutePoints();
-            closeModal('modal-route');
-            alert('Точка добавлена!');
-        }
-
-        // ===================== ПРОФИЛЬ И ВЕДЕНИЕ =====================
+        // --- МОДУЛЬ 1: ГЕОЛОКАЦИЯ, ПРОФИЛЬ И СИНТЕЗ РЕЧИ ---
         const canvas = document.getElementById('simCanvas');
         const ctx = canvas.getContext('2d');
 
-        // Устанавливаем реальный размер canvas под экран (но сохраняем соотношение)
-        function resizeCanvas() {
-            const container = canvas.parentElement;
-            const width = container.clientWidth - 20; // отступы
-            canvas.width = width;
-            canvas.height = width * 0.42; // пропорция
-            drawProfile();
+        // Генерируем массив высот профиля Белорусской железной дороги
+        let terrain = [];
+        for (let i = 0; i < 3000; i++) {
+            terrain.push(160 + Math.sin(i * 0.07) * 20 + Math.cos(i * 0.03) * 10);
         }
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
 
-        function activateTracking() {
-            if (routesUsedCount >= 2 && !localStorage.getItem('pro')) {
-                alert('Бесплатный лимит исчерпан. Оформите подписку PRO.');
-                return;
-            }
+        // База данных предупреждений по ходу движения (индекс массива = сотни метров)
+        // Генерируем тестовые точки для проверки алгоритма на перегоне
+        let objectsDatabase = {};
+        for (let i = 6; i < 3000; i += 12) {
+            objectsDatabase[i] = "Нейтральная вставка";
+        }
+        for (let i = 11; i < 3000; i += 18) {
+            objectsDatabase[i] = "Ограничение скорости 60 километров в час";
+        }
+
+        let trainX = 0;         // Пройденный путь поезда в метрах
+        let currentSpeed = 0;   // Скорость в км/ч с GPS датчика
+        let gpsStatus = "Нажмите красную кнопку!";
+        let spokenObjects = {}; // Список уже озвученных предупреждений
+        let lastLat = null, lastLon = null;
+
+        // ДВИЖОК ГОЛОСОВЫХ ОПОВЕЩЕНИЙ
+        function speak(text) {
             if ('speechSynthesis' in window) {
-                const utter = new SpeechSynthesisUtterance('Система ведения запущена. Будьте внимательны.');
-                utter.lang = 'ru-RU';
-                utter.pitch = 1.0; utter.rate = 0.95;
-                window.speechSynthesis.cancel();
-                window.speechSynthesis.speak(utter);
+                window.speechSynthesis.cancel(); // Прерываем текущую речь ради срочного предупреждения
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'ru-RU';
+                utterance.pitch = 1.0;
+                utterance.rate = 1.0;
+                window.speechSynthesis.speak(utterance);
             }
-            trackingActive = true;
-            startGPS();
         }
 
-        function startGPS() {
-            if (!navigator.geolocation) {
-                document.getElementById('telemetry').innerHTML = '❌ GPS недоступен';
-                return;
-            }
-            navigator.geolocation.watchPosition(pos => {
-                const lat = pos.coords.latitude;
-                const lng = pos.coords.longitude;
-                currentSpeed = pos.coords.speed ? Math.round(pos.coords.speed * 3.6) : 0;
-                
-                if (lastLat && lastLon) {
-                    const d = getDistance(lastLat, lastLon, lat, lng);
-                    if (d > 1 && d < 150) trainX += d;
-                }
-                lastLat = lat; lastLon = lng;
-                
-                if (map && trainMarker) {
-                    trainMarker.setLatLng([lat, lng]);
-                    map.setView([lat, lng], map.getZoom());
-                }
-                
-                checkWarnings(trainX);
-                checkStationPassing(lat, lng);
-                
-                document.getElementById('telemetry').innerHTML = `
-                    🛰️ GPS: ОК (${lat.toFixed(4)}, ${lng.toFixed(4)})<br>
-                    🚂 Скорость: <b style="color:#00adb5; font-size:18px;">${currentSpeed} км/ч</b><br>
-                    📏 Пройдено: ${Math.round(trainX)} м<br>
-                    🔔 До пикета: ${100 - (Math.round(trainX) % 100)} м
-                `;
-                drawProfile();
-            }, err => {
-                document.getElementById('telemetry').innerHTML = '⚠️ Потеря GPS. Держите устройство у стекла.';
-            }, {
-                enableHighAccuracy: true, maximumAge: 0, timeout: 5000
-            });
+        function activateAudio() {
+            speak("Система ведения поезда БЧ запущена. Подключаюсь к спутникам.");
+            gpsStatus = "Поиск спутников...";
+            startGPSWatch();
         }
 
+        // УМНЫЙ ИНФОРМАТОР: ПРЕДУПРЕЖДАЕТ СТРОГО ЗА 500 МЕТРОВ
+        function checkUpcomingHazards(currentIndex) {
+            const currentPoint = Math.floor(currentIndex / 100);
+            
+            // Сканируем массив вперед на 600 метров
+            for (let i = currentPoint; i <= currentPoint + 6; i++) {
+                if (objectsDatabase[i]) {
+                    const objectName = objectsDatabase[i];
+                    const targetMeters = i * 100;
+                    const exactDistance = targetMeters - currentIndex;
+                    const objectKey = `${objectName}_${i}`;
+
+                    // Триггер срабатывает строго в коридоре от 460 до 515 метров до объекта
+                    if (exactDistance <= 515 && exactDistance >= 460) {
+                        if (!spokenObjects[objectKey]) {
+                            speak(`Внимание! Через 500 метров ${objectName}`);
+                            spokenObjects[objectKey] = true; // Блокируем повторы для этой точки
+                        }
+                    }
+                }
+            }
+        }
+
+        // Вычисление расстояния в метрах между точками (Формула Гаверсинусов)
         function getDistance(lat1, lon1, lat2, lon2) {
             const R = 6371000;
             const dLat = (lat2 - lat1) * Math.PI / 180;
             const dLon = (lon2 - lon1) * Math.PI / 180;
-            const a = Math.sin(dLat/2)**2 + Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLon/2)**2;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
             return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         }
 
-        function checkWarnings(currentMeters) {
-            const idx = Math.floor(currentMeters / 100);
-            for (let i = idx; i <= idx + 6; i++) {
-                if (warningsDB[i]) {
-                    const dist = (i * 100) - currentMeters;
-                    const key = `${i}_${warningsDB[i]}`;
-                    if (dist <= 515 && dist >= 460 && !spokenWarnings[key]) {
-                        const utter = new SpeechSynthesisUtterance(`Внимание! Через 500 метров ${warningsDB[i]}`);
-                        utter.lang = 'ru-RU'; utter.rate = 0.9;
-                        window.speechSynthesis.cancel();
-                        window.speechSynthesis.speak(utter);
-                        spokenWarnings[key] = true;
+        // СЛЕЖЕНИЕ ЗА GPS НА ХОДУ
+        function startGPSWatch() {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.watchPosition((position) => {
+                    const lat = position.coords.latitude;
+                    const lon = position.coords.longitude;
+                    
+                    // Переводим скорость из м/с в км/ч
+                    currentSpeed = position.coords.speed ? Math.round(position.coords.speed * 3.6) : 0;
+                    
+                    if (lastLat !== null && lastLon !== null) {
+                        const moved = getDistance(lastLat, lastLon, lat, lon);
+                        // Защита от прыжков координат (считаем перемещение от 1 до 150 метров нормальным)
+                        if (moved > 1 && moved < 150) { 
+                            trainX += moved;
+                        }
                     }
-                }
+                    
+                    lastLat = lat;
+                    lastLon = lon;
+                    gpsStatus = `Спутники БЧ: ОК (${lat.toFixed(4)}, ${lon.toFixed(4)})`;
+                    
+                    // Проверяем опасности за 500 метров
+                    checkUpcomingHazards(trainX);
+
+                }, (err) => { 
+                    gpsStatus = "Потеря сигнала. Положите телефон ближе к стеклу кабины."; 
+                }, 
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 6000 });
+            } else {
+                gpsStatus = "Аппаратный GPS недоступен";
             }
         }
 
-        function checkStationPassing(lat, lng) {
-            routePoints.forEach(p => {
-                if (p.type === 'station') {
-                    const dist = getDistance(lat, lng, p.lat, p.lng);
-                    if (dist < 200 && !stationsPassedList.includes(p.name)) {
-                        stationsPassedList.push(p.name + ' ' + new Date().toLocaleTimeString());
-                        document.getElementById('stationsPassed').value = stationsPassedList.join('\n');
-                    }
-                }
-            });
-        }
-
-        function drawProfile() {
-            if (!canvas || !ctx) return;
+        // АНИМАЦИЯ ХОЛМОВ И ПОЕЗДА
+        function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            
-            const w = canvas.width;
-            const h = canvas.height;
-            const halfWidthMeters = (w / 2) * SCALE; // сколько метров от центра до края
-            const cameraCenterM = trainX; // камера следует за поездом (центр — голова поезда)
-            const worldStart = cameraCenterM - halfWidthMeters;
-            
-            // Рисуем линию профиля
+            const cameraOffset = trainX - 150;
+
+            // 1. Отрисовываем линию профиля пути
             ctx.beginPath();
-            ctx.strokeStyle = '#00adb5';
-            ctx.lineWidth = 3;
-            let first = true;
-            for (let px = 0; px < w; px++) {
-                const worldM = worldStart + px * SCALE;
-                const idx = Math.floor(worldM);
-                const elev = (idx >= 0 && idx < terrain.length) ? terrain[idx] : 150;
-                const screenY = h - elev + 20; // инвертируем и добавляем отступ
-                if (first) {
-                    ctx.moveTo(px, screenY);
-                    first = false;
-                } else {
-                    ctx.lineTo(px, screenY);
-                }
+            ctx.strokeStyle = "#00adb5";
+            ctx.lineWidth = 4;
+            for (let sX = 0; sX < canvas.width; sX++) {
+                const wX = Math.floor(sX + cameraOffset);
+                const wY = (wX >= 0 && wX < terrain.length) ? terrain[wX] : 150;
+                if (sX === 0) ctx.moveTo(sX, wY); else ctx.lineTo(sX, wY);
             }
             ctx.stroke();
 
-            // Рисуем значки предупреждений
-            for (const key in warningsDB) {
-                const objMeters = parseInt(key) * 100;
-                const screenX = (objMeters - worldStart) / SCALE;
-                if (screenX >= 0 && screenX <= w) {
-                    const idx = Math.floor(objMeters);
-                    const elev = (idx >= 0 && idx < terrain.length) ? terrain[idx] : 150;
-                    const screenY = h - elev + 20;
-                    
-                    ctx.fillStyle = warningsDB[key].includes('вставка') ? '#ffea00' : '#ff4141';
-                    ctx.fillRect(screenX - 2, screenY - 25, 4, 25);
-                    ctx.beginPath();
-                    ctx.arc(screenX, screenY - 25, 6, 0, Math.PI * 2);
-                    ctx.fill();
+            // 2. Отрисовываем знаки объектов (вставки, ограничения) на холмах
+            const currentPoint = Math.floor(trainX / 100);
+            for (let i = currentPoint - 5; i <= currentPoint + 10; i++) {
+                if (objectsDatabase[i]) {
+                    const objMeters = i * 100;
+                    const screenX = objMeters - cameraOffset;
+                    if (screenX >= 0 && screenX <= canvas.width) {
+                        const objY = terrain[Math.floor(objMeters)];
+                        
+                        ctx.fillStyle = objectsDatabase[i].includes("вставка") ? "#ffea00" : "#ff4141";
+                        ctx.fillRect(screenX - 2, objY - 45, 4, 45); // стойка знака
+                        ctx.beginPath();
+                        ctx.arc(screenX, objY - 45, 8, 0, Math.PI * 2); // сигнальный диск
+                        ctx.fill();
+                    }
                 }
             }
 
-            // Рисуем поезд с учётом его длины
-            const trainLengthM = parseInt(document.getElementById('trainLength').value) || 800;
-            const headX = (trainX - worldStart) / SCALE; // голова поезда в пикселях
-            const tailX = ((trainX - trainLengthM) - worldStart) / SCALE; // хвост
-            const trainWidthPx = headX - tailX;
-            
-            // Средняя высота под поездом
-            const headIdx = Math.floor(trainX);
-            const tailIdx = Math.floor(trainX - trainLengthM);
-            const avgElev = (terrain[Math.min(headIdx, terrain.length-1)] + 
-                             terrain[Math.max(0, tailIdx)]) / 2;
-            const trainY = h - avgElev + 20 - 15; // над профилем
-            
-            // Рисуем прямоугольник поезда
-            ctx.fillStyle = '#ff4141';
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 2;
-            const trainHeight = 18;
-            ctx.fillRect(tailX, trainY, trainWidthPx, trainHeight);
-            ctx.strokeRect(tailX, trainY, trainWidthPx, trainHeight);
-            
-            // Колёса (декоративно)
-            ctx.fillStyle = '#333';
-            const wheelR = 4;
-            for (let wx = tailX + 10; wx < headX - 10; wx += 30) {
-                ctx.beginPath();
-                ctx.arc(wx, trainY + trainHeight, wheelR, 0, Math.PI*2);
-                ctx.fill();
-            }
-        }
+            // 3. Отрисовываем локомотив машиниста
+            ctx.save();
+            const trainY = (Math.floor(trainX) < terrain.length) ? terrain[Math.floor(trainX)] : 150;
+            ctx.translate(150, trainY);
+            ctx.fillStyle = "#ff4141";
+            ctx.fillRect(-15, -12, 30, 10); // кузов
+            ctx.fillStyle = "#333";
+            ctx.fillRect(-10, -2, 6, 4);   // колеса
+            ctx.fillRect(4, -2, 6, 4);
+            ctx.restore();
 
-        // ===================== ТУ-3 =====================
-        function calculateShift() {
-            const toMins = s => { if(!s) return 0; const [h,m] = s.split(':').map(Number); return h*60+m; };
-            const y = toMins(document.getElementById('timeYavka').value);
-            const sl = toMins(document.getElementById('timeSdachaLoco').value);
-            const ps = toMins(document.getElementById('passStartTime').value);
-            const pa = toMins(document.getElementById('passArrTime').value);
-            
-            if (!y || !sl) { alert('Введите время явки и сдачи локомотива!'); return; }
-            
-            const total = sl >= y ? sl - y : (1440 - y) + sl;
-            const pass = (ps && pa) ? (pa >= ps ? pa - ps : (1440 - ps) + pa) : 0;
-            const work = Math.max(0, total - pass);
-            
-            const fmt = m => `${Math.floor(m/60)} ч. ${m%60} мин.`;
-            document.getElementById('results').innerHTML = `
-                <b>Всего на работе:</b> ${fmt(total)}<br>
-                <b>Пассажиром:</b> ${fmt(pass)}<br>
-                <b>Чистая работа:</b> ${fmt(work)}
+            // Вывод данных на панель приборов
+            document.getElementById('telemetry').innerHTML = `
+                <strong>Статус GPS:</strong> ${gpsStatus}<br>
+                <strong>Скорость локомотива:</strong> <span style="color:#00adb5; font-size:18px; font-weight:bold;">${currentSpeed} км/ч</span><br>
+                <strong>Счетчик пути:</strong> ${Math.round(trainX)} метров пройдено<br>
+                <strong>До следующего пикета:</strong> через ${100 - (Math.round(trainX) % 100)} м.
             `;
-            
-            // Сохраняем в месяц
-            monthlyMinutes += work;
-            localStorage.setItem('monthlyMinutes', monthlyMinutes);
-            document.getElementById('monthlyTotal').textContent = fmt(monthlyMinutes);
+            requestAnimationFrame(draw);
         }
+        draw();
 
-        function saveSettings() {
-            localStorage.setItem('trainLength', document.getElementById('trainLength').value);
-            localStorage.setItem('maxSpeed', document.getElementById('maxSpeed').value);
-            drawProfile(); // перерисовка, т.к. длина изменилась
-        }
-
-        // ===================== ОБМЕН И ПОДПИСКА =====================
+        // --- МОДУЛЬ 2: ОБМЕН МАРШРУТАМИ ---
         function exportRoute() {
-            const data = { points: routePoints, warnings: warningsDB };
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `route_${new Date().toISOString().slice(0,10)}.json`;
-            a.click();
-            document.getElementById('share-status').textContent = '✅ Файл сохранён.';
+            const dataStr = JSON.stringify(objectsDatabase, null, 2);
+            const blob = new Blob([dataStr], { type: "application/json" });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = `route_export_${new Date().toISOString().split('T')[0]}.json`;
+            link.click();
+            document.getElementById('share-status').innerText = "Файл сохранен в Загрузки.";
         }
 
         function importRoute(input) {
             const file = input.files[0];
             if (!file) return;
             const reader = new FileReader();
-            reader.onload = e => {
+            reader.onload = function(e) {
                 try {
-                    const data = JSON.parse(e.target.result);
-                    if (data.points) routePoints = data.points;
-                    if (data.warnings) warningsDB = data.warnings;
-                    localStorage.setItem('routePoints', JSON.stringify(routePoints));
-                    rebuildWarningsDB();
-                    renderRoutePoints();
-                    document.getElementById('share-status').innerHTML = '<span style="color:#4caf50;">✅ Маршрут загружен!</span>';
-                } catch(ex) {
-                    document.getElementById('share-status').textContent = '❌ Ошибка файла.';
-                }
+                    objectsDatabase = JSON.parse(e.target.result);
+                    document.getElementById('share-status').innerHTML = "<span style='color:#4caf50;'>База предупреждений успешно обновлена!</span>";
+                } catch(err) { document.getElementById('share-status').innerText = "Ошибка формата файла."; }
             };
             reader.readAsText(file);
         }
 
-        function simulateSubscription() {
-            localStorage.setItem('pro', 'true');
-            routesUsedCount = 0;
-            localStorage.setItem('routesUsedCount', '0');
-            updateRoutesUsedDisplay();
-            alert('Подписка PRO активирована (демо)!');
-        }
+        // --- МОДУЛЬ 3: ПОДХОД ВРЕМЕНИ ТУ-3 ---
+        function calculateTime() {
+            const y = document.getElementById('timeYavka').value;
+            const s = document.getElementById('timeSdachaLoco').value;
+            const ps = document.getElementById('passStart').value;
+            const pe = document.getElementById('passEnd').value;
 
-        function updateRoutesUsedDisplay() {
-            document.getElementById('routesUsed').textContent = routesUsedCount;
-        }
+            if(!y || !s) { alert("Введите время явки и сдачи!"); return; }
 
-        // ===================== ЗАГРУЗКА ДАННЫХ =====================
-        window.addEventListener('load', () => {
-            initMap();
-            resizeCanvas();
-            drawProfile();
-            updateRoutesUsedDisplay();
-            document.getElementById('monthlyTotal').textContent = 
-                (() => { const m = monthlyMinutes; return `${Math.floor(m/60)} ч. ${m%60} мин.`; })();
-            const tl = localStorage.getItem('trainLength');
-            const ms = localStorage.getItem('maxSpeed');
-            if (tl) document.getElementById('trainLength').value = tl;
-            if (ms) document.getElementById('maxSpeed').value = ms;
-            if (localStorage.getItem('pro')) {
-                document.getElementById('routesUsed').textContent = '∞ (PRO)';
-            }
-            // Перерисовка при изменении размера окна
-            window.addEventListener('resize', () => {
-                resizeCanvas();
-                drawProfile();
-            });
-        });
+            const toMins = str => { const [h, m] = str.split(':').map(Number); return h * 60 + m; };
+            const yavka = toMins(y), sdacha = toMins(s), pStart = toMins(ps)||0, pEnd = toMins(pe)||0;
 
-        // Регистрация Service Worker
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('service-worker.js')
-                .then(() => console.log('SW зарегистрирован'))
-                .catch(err => console.log('SW ошибка:', err));
+            let total = (sdacha >= yavka) ? (sdacha - yavka) : ((1440 - yavka) + sdacha);
+            let pass = (pEnd >= pStart) ? (pEnd - pStart) : ((1440 - pStart) + pEnd);
+            if (!ps || !pe) pass = 0;
+            let pure = total - pass;
+
+            const format = m => `${Math.floor(m/60)} ч. ${m%60} мин.`;
+            document.getElementById('results').innerHTML = `
+                <strong>Всего за смену:</strong> ${format(total)}<br>
+                <strong>Следование пассажиром:</strong> ${format(pass)}<br>
+                <strong>Чистая работа на посту:</strong> ${format(pure < 0 ? 0 : pure)}
+            `;
         }
     </script>
 </body>
