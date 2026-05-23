@@ -26,11 +26,14 @@ jobs:
       - name: Install Bubblewrap
         run: npm install -g @bubblewrap/cli
 
-      - name: Init and build APK
+      - name: Init Bubblewrap (автоответ 'y')
         run: |
-          bubblewrap init --manifest=manifest.json --directory=./build --yes
+          echo "y" | bubblewrap init --manifest=manifest.json --directory=./build
+
+      - name: Generate keystore and build APK
+        run: |
           cd build
-          bubblewrap generate-key --password="test123"
+          echo "y" | bubblewrap generate-key --password="test123"
           bubblewrap build --acceptToS --password="test123" --keypassword="test123"
 
       - name: Upload APK
