@@ -1,0 +1,27 @@
+name: Build Android APK (PWA)
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-size: 20
+
+      - name: Install Bubblewrap CLI
+        run: npm install -g @bubblewrap/cli
+
+      - name: Build APK using PWABuilder Action
+        uses: pwa-builder/pwa-starter-action@v1
+        with:
+          # Ссылка на ваш manifest.json (замените юзернейм на свой, если он отличается)
+          manifest-url: 'https://raw.githubusercontent.com/hukerlichnoe-eng/Pril/main/manifest.json'
