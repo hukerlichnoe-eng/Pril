@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Бортовой Помощник Машиниста БЧ v4.6 (Авто-конвертер)</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --accent-color: #00adb5;
+            --text-color: #eeeeee;
+            --highlight-bg: #2d3748;
+            --highlight-border: #4299e1;
+            --success-color: #4caf50;
+            --danger-color: #ff4141;
+            --warning-color: #ffea00;
+        }
+        body { 
+            margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color); color: var(--text-color); padding: 15px; box-sizing: border-box;
+        }
+        .card { 
+            background: var(--card-bg); padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); 
+        }
+        h2, h3 { margin-top: 0; color: var(--accent-color); border-bottom: 1px solid #333; padding-bottom: 5px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+        label { font-size: 12px; display: block; margin-bottom: 4px; color: #b3b3b3; }
+        input, select { width: 100%; padding: 10px; background: #2d2d2d; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box; margin-bottom: 10px; font-size: 14px; }
+        .highlight-zone { border: 2px solid var(--highlight-border); background-color: var(--highlight-bg); padding: 10px; border-radius: 6px; margin-top: 10px; }
+        .btn { display: block; width: 100%; padding: 14px; border: none; color: white; font-weight: bold; border-radius: 4px; cursor: pointer; text-align: center; box-sizing: border-box; margin-top: 10px; font-size: 14px; text-transform: uppercase; transition: background 0.2s; }
+        .btn-accent { background: var(--accent-color); }
+        .btn-danger { background: var(--danger-color); }
+        .btn-share { background: var(--success-color); }
+        .btn-warn { background: var(--warning-color); color: #000; }
+        .btn-gray { background: #555; }
+        input[type="file"] { display: none; }
+        canvas { background-color: #111; border: 1px solid #444; border-radius: 8px; width: 100%; height: auto; }
+        #map { width: 100%; height: 320px; border-radius: 8px; border: 1px solid #444; margin-top: 10px; }
+        .section-divider { height: 2px; background: linear-gradient(to right, transparent, var(--accent-color), transparent); margin: 30px 0; }
+        .status-box { margin-top:15px; font-size:14px; line-height: 1.6; background: #151515; padding: 12px; border-radius: 5px; border-left: 4px solid var(--accent-color); }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h3>📈 Профиль пути БЧ (Масштаб 1px = 2м)</h3>
+        <canvas id="simCanvas" width="600" height="180"></canvas>
+        
+        <h3>🗺️ Положение состава на ЖД карте</h3>
+        <div id="map"></div>
+        
+        <button class="btn btn-danger" style="padding: 16px; font-size: 15px;" onclick="activateAudio()">🔊 АКТИВИРОВАТЬ ИНФОРМАТОР НА ЛИНИИ</button>
+        
+        <div id="telemetry" class="status-box">
+            Ожидание запуска. Нажмите кнопку выше для старта спутникового мониторинга...
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>🛠 Параметры состава и Разметка ТРА</h3>
+        <div class="highlight-zone" style="margin-bottom: 15px; margin-top: 0;">
+            <label style="color: #fff; font-weight: bold;">📏 Длина поезда (метров вручную):</label>
+            <input type="number" id="trainLengthInput" value="600" onchange="updateTrainLength(this.value)">
+        </div>
+        <p style="font-size: 13px; color: #aaa; margin-top: 0;">Фиксация объектов кабиной локомотива (Головой поезда):</p>
+        <div class="grid-2" style="margin-bottom: 10px;">
+            <button class="btn btn-warn" onclick="addCurrentObject('Нейтральная вставка', 'circle', '#ffea00')">📌 Вставка тут</button>
+            <button class="btn btn-danger" onclick="addCurrentObject('Ограничение скорости 60 км/ч', 'circle', '#ff4141')">⚠️ Скорость 60 тут</button>
+        </div>
+        <div class="grid-2">
+            <button class="btn btn-accent" onclick="addCurrentObject('Светофор', 'sem', '#00ff00')">🚦 Записать Светофор</button>
+            <button class="btn btn-gray" onclick="addCurrentObject('Километровый столб', 'line', '#ffffff')">⚪ Записать Км Столб</button>
+        </div>
+        <div id="log-status" style="margin-top:10px; font-size:13px; color: #00adb5; font-weight: bold; text-align: center;"></div>
+    </div>
+
+    <div class="card">
+        <h3>💾 Загрузка ЖД данных (Внешние файлы путей и точек)</h3>
+        <p style="font-size: 13px; color: #ccc; margin-top: 0;">Импортируйте сетку путей БЧ (после Termux/Overpass) и ваши готовые точки .gpx</p>
+        
+        <div class="grid-2">
+            <label class="btn btn-accent" for="import-geojson">🗺️ Загрузить пути (.geojson)</label>
+            <input type="file" id="import-geojson" accept=".geojson,.json" onchange="loadGeoJsonTracks(this)">
+
+            <label class="btn btn-share" for="import-gpx">📌 Загрузить точки (.json/.gpx)</label>
+            <input type="file" id="import-gpx" accept=".json,.gpx" onchange="loadGpxPoints(this)">
+        </div>
+        
+        <div style="margin-top: 15px;">
+            <button class="btn btn-gray" onclick="exportRoute()">⬇️ Экспортировать записанный маршрут</button>
+            <label class="btn btn-gray" style="display:inline-block; margin-top:10px;" for="import-file">⬆️ Восстановить базу (.json)</label>
+            <input type="file" id="import-file" accept=".json" onchange="importRoute(this)">
+        </div>
+        <div id="share-status" style="margin-top:10px; text-align:center; font-size:13px; color:#aaa;"></div>
+    </div>
+
+    <div class="section-divider"></div>
+
+    <div class="card">
+        <h2>📑 Маршрутный лист ТУ-3</h2>
+        <div class="grid-2">
+            <div>
+                <label>Станция явки</label>
+                <input type="text" id="callStation" placeholder="Минск-Сорт.">
+            </div>
+            <div>
+                <label>Дата смены</label>
+                <input type="date" id="workDate">
+            </div>
+        </div>
+        <div class="grid-2">
+            <div>
+                <label>Время явки</label>
+                <input type="time" id="timeYavka">
+            </div>
+            <div>
+                <label>Сдача локомотива</label>
+                <input type="time" id="timeSdachaLoco">
+            </div>
+        </div>
+        <div class="grid-2">
+            <div>
+                <label>Время отпр. пасс</label>
+                <input type="time" id="passStart">
+            </div>
+            <div>
+                <label>Время приб. пасс</label>
+                <input type="time" id="passEnd">
+            </div>
+        </div>
+        <div class="highlight-zone">
+            <h3 style="border:none; padding:0; margin-bottom:10px;">Данные поезда</h3>
+            <div class="grid-3">
+                <div><label>Номер поезда</label><input type="text" id="trainNum" placeholder="201"></div>
+                <div><label>Вес (тонн)</label><input type="number" id="trainWeight" placeholder="4500"></div>
+                <div><label>Длина (м)</label><input type="number" id="trainLengthTU3" value="600" onchange="updateTrainLength(this.value)"></div>
+            </div>
+        </div>
+        <button class="btn btn-accent" onclick="calculateTime()">Рассчитать время смены</button>
+    </div>
+
+    <div class="card" style="border-left: 4px solid var(--accent-color);">
+        <h3>📊 Итоговый расчет рабочего времени</h3>
+        <div id="results" style="font-size:15px; line-height:1.6;">Введите параметры времени выше и нажмите расчет.</div>
+    </div>
+
+    <script>
+        document.getElementById('workDate').value = new Date().toISOString().split('T')[0];
+
+        // --- ИНИЦИАЛИЗАЦИЯ ИНТЕРАКТИВНОЙ КАРТЫ (Leaflet) ---
+        const map = L.map('map').setView([53.8901, 27.5505], 14);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        const headMarker = L.circleMarker([53.8901, 27.5505], {radius: 7, color: '#ff4141', fillColor: '#ff4141', fillOpacity: 1}).addTo(map).bindPopup("Голова поезда (Локомотив)");
+        const midMarker = L.circleMarker([53.8901, 27.5505], {radius: 4, color: '#ffea00', fillColor: '#ffea00', fillOpacity: 1}).addTo(map).bindPopup("Середина состава");
+        const tailMarker = L.circleMarker([53.8901, 27.5505], {radius: 5, color: '#00adb5', fillColor: '#00adb5', fillOpacity: 1}).addTo(map).bindPopup("Хвост поезда");
+        const trainLine = L.polyline([], {color: '#ff4141', weight: 4}).addTo(map);
+
+        // --- ГЕНЕРАЦИЯ ПЛАВНОГО РЕЛЬЕФА (ХОЛСТ) ---
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+
+        let terrain = [];
+        let currentHeight = 120;
+        let segmentLength = 0;
+        let currentSlope = 0;
+
+        for (let i = 0; i < 15000; i++) {
+            if (segmentLength <= 0) {
+                segmentLength = Math.floor(Math.random() * 300) + 200; 
+                currentSlope = (Math.random() - 0.5) * 0.12; 
+                if (Math.random() > 0.6) currentSlope = 0; 
+            }
+            currentHeight += currentSlope;
+            if (currentHeight < 40) currentHeight = 40;
+            if (currentHeight > 150) currentHeight = 150;
+            terrain.push(currentHeight);
+            segmentLength--;
+        }
+
+        // БАЗЫ ДАННЫХ ЖД ОБЪЕКТОВ
+        let objectsDatabase = {}; 
+        let geoObjects = [];      
+        let railwayFeatures = []; // Хранилище геометрии путей для алгоритма притягивания
+        
+        let trainX = 0;           
+        let trainLength = 600;    
+        let currentSpeed = 0;
+        let gpsStatus = "Ожидание активации...";
+        let spokenObjects = {};
+        let lastLat = null, lastLon = null;
+        let currentBearing = 180; 
+
+        function updateTrainLength(val) {
+            trainLength = parseInt(val) || 100;
+            document.getElementById('trainLengthInput').value = trainLength;
+            document.getElementById('trainLengthTU3').value = trainLength;
+        }
+
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'ru-RU';
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        function activateAudio() {
+            speak("Система ведения поезда активирована. Запуск геопозиционирования.");
+            gpsStatus = "Поиск спутников GPS/ГЛОНАСС...";
+            startGPSWatch();
+        }
+
+        function addCurrentObject(type, drawType, color) {
+            if (lastLat === null || lastLon === null) {
+                alert("Ошибка: нет стабильного сигнала GPS для фиксации точки!");
+                return;
+            }
+
+            const currentPoint = Math.floor(trainX / 100);
+            objectsDatabase[currentPoint] = type;
+
+            const newGeoObj = {
+                name: type,
+                lat: lastLat,
+                lon: lastLon,
+                type: drawType || 'circle',
+                color: color || '#ff4141',
+                meterMark: trainX
+            };
+            geoObjects.push(newGeoObj);
+            renderObjectOnMap(newGeoObj); 
+
+            document.getElementById('log-status').innerText = `Зафиксировано: ${type} на ${Math.round(trainX)} м.`;
+            speak(`${type} зафиксировано`);
+            setTimeout(() => { document.getElementById('log-status').innerText = ""; }, 4000);
+        }
+
+        function renderObjectOnMap(obj) {
+            if (obj.type === 'line') {
+                const p1 = [obj.lat - 0.0001, obj.lon - 0.0001];
+                const p2 = [obj.lat + 0.0001, obj.lon + 0.0001];
+                L.polyline([p1, p2], {color: obj.color, weight: 6}).addTo(map).bindPopup(`Километраж: ${obj.name}`);
+            } 
+            else if (obj.type === 'sem') {
+                L.circleMarker([obj.lat, obj.lon], {
+                    radius: 6, color: '#ffffff', weight: 2, fillColor: '#00ff00', fillOpacity: 1
+                }).addTo(map).bindPopup(`Светофор: ${obj.name}`);
+            } 
+            else {
+                L.circleMarker([obj.lat, obj.lon], {
+                    radius: 6, color: obj.color, fillColor: obj.color, fillOpacity: 0.8
+                }).addTo(map).bindPopup(obj.name);
+            }
+        }
+
+        function checkUpcomingHazards(currentIndex) {
+            const currentPoint = Math.floor(currentIndex / 100);
+            for (let i = currentPoint; i <= currentPoint + 6; i++) {
+                if (objectsDatabase[i]) {
+                    const objectName = objectsDatabase[i];
+                    const exactDistance = (i * 100) - currentIndex;
+                    const objectKey = `${objectName}_manual_${i}`;
+
+                    if (exactDistance <= 520 && exactDistance >= 460) {
+                        if (!spokenObjects[objectKey]) {
+                            speak("Внимание! Через пятьсот метров " + objectName);
+                            spokenObjects[objectKey] = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        function checkUpcomingHazardsGeo(currentLat, currentLon) {
+            geoObjects.forEach(obj => {
+                const dist = getDistance(currentLat, currentLon, obj.lat, obj.lon);
+                const objectKey = `${obj.name}_geo_${obj.lat}_${obj.lon}`;
+                
+                if (dist <= 530 && dist >= 470) {
+                    if (!spokenObjects[objectKey]) {
+                        speak("Внимание! Через пятьсот метров " + obj.name);
+                        spokenObjects[objectKey] = true;
+                    }
+                }
+            });
+        }
+
+        // --- АЛГОРИТМ ПРИТЯГИВАНИЯ К ОСИ ЖД ПУТИ (SNAP TO RAILWAY) ---
+        function snapToRailway(lat, lon) {
+            if (railwayFeatures.length === 0) return [lat, lon]; 
+
+            let minDistance = Infinity;
+            let snappedCoords = [lat, lon];
+
+            railwayFeatures.forEach(geometry => {
+                const lines = geometry.type === 'MultiLineString' ? geometry.coordinates : [geometry.coordinates];
+                
+                lines.forEach(line => {
+                    for (let i = 0; i < line.length - 1; i++) {
+                        const p1 = line[i];     
+                        const p2 = line[i+1];
+                        
+                        const closest = getClosestPointOnSegment([lat, lon], [p1[1], p1[0]], [p2[1], p2[0]]);
+                        const dist = getDistance(lat, lon, closest[0], closest[1]);
+                        
+                        if (dist < minDistance) {
+                            minDistance = dist;
+                            snappedCoords = closest;
+                        }
+                    }
+                });
+            });
+
+            // Восстанавливаем радиус: притяжение работает в радиусе 150 метров
+            return minDistance < 150 ? snappedCoords : [lat, lon];
+        }
+
+        function getClosestPointOnSegment(p, p1, p2) {
+            const x = p[0], y = p[1];
+            const x1 = p1[0], y1 = p1[1];
+            const x2 = p2[0], y2 = p2[1];
+            
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            
+            if (dx === 0 && dy === 0) return p1;
+            
+            let t = ((x - x1) * dx + (y - y1) * dy) / (dx * dx + dy * dy);
+            t = Math.max(0, Math.min(1, t)); 
+            
+            return [x1 + t * dx, y1 + t * dy];
+        }
+
+        function calculateOffsetCoords(baseLat, baseLon, offsetMeters, bearing) {
+            const R = 6371000;
+            const d = offsetMeters / R;
+            const lat1 = baseLat * Math.PI / 180;
+            const lon1 = baseLon * Math.PI / 180;
+            const brng = bearing * Math.PI / 180;
+
+            const lat2 = Math.asin(Math.sin(lat1)*Math.cos(d) + Math.cos(lat1)*Math.sin(d)*Math.cos(brng));
+            const lon2 = lon1 + Math.atan2(Math.sin(brng)*Math.sin(d)*Math.cos(lat1), Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
+
+            return [lat2 * 180 / Math.PI, lon2 * 180 / Math.PI];
+        }
+
+        function getDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371000;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        function getBearing(lat1, lon1, lat2, lon2) {
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const lat1Rad = lat1 * Math.PI / 180;
+            const lat2Rad = lat2 * Math.PI / 180;
+            const y = Math.sin(dLon) * Math.cos(lat2Rad);
+            const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) - Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon);
+            const brng = Math.atan2(y, x) * 180 / Math.PI;
+            return (brng + 360) % 360;
+        }
+
+        function startGPSWatch() {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.watchPosition((position) => {
+                    let rawLat = position.coords.latitude;
+                    let rawLon = position.coords.longitude;
+                    
+                    const snapped = snapToRailway(rawLat, rawLon);
+                    const lat = snapped[0];
+                    const lon = snapped[1];
+                    
+                    currentSpeed = position.coords.speed ? Math.round(position.coords.speed * 3.6) : 0;
+
+                    if (lastLat !== null && lastLon !== null) {
+                        const moved = getDistance(lastLat, lastLon, lat, lon);
+                        
+                        if (moved > 2.0) { 
+                            trainX += moved; 
+                            currentBearing = getBearing(lastLat, lastLon, lat, lon); 
+                            lastLat = lat;
+                            lastLon = lon;
+                        }
+                    } else {
+                        lastLat = lat;
+                        lastLon = lon;
+                    }
+                    
+                    gpsStatus = `Спутники: Активны. Привязка к оси пути ОК.`;
+                    
+                    checkUpcomingHazards(trainX);
+                    checkUpcomingHazardsGeo(lat, lon);
+
+                }, (err) => {
+                    if (currentSpeed > 5) {
+                        trainX += (currentSpeed / 3.6);
+                    }
+                    gpsStatus = "Экстраполяция пути (потеря сигнала неба)";
+                }, { enableHighAccuracy: true, maximumAge: 0, timeout: 4000 });
+            } else {
+                alert("GPS не поддерживается этим устройством.");
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            const scale = 2; 
+            const cameraOffset = trainX - (450 * scale);
+
+            ctx.strokeStyle = "#252525";
+            ctx.lineWidth = 1;
+            for(let i = 0; i < canvas.width; i += 50) {
+                ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); ctx.stroke();
+            }
+
+      
