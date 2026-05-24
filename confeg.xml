@@ -1,0 +1,16 @@
+<?xml version='1.0' encoding='utf-8'?>
+<widget id="com.lokomotiv.helper" version="1.0.0" xmlns="http://www.w3.org/ns/widgets" xmlns:cdv="http://cordova.apache.org/ns/1.0">
+    <name>Помощник Машиниста</name>
+    <description>Контроль профиля БЧ, GPS навигация и ТУ-3</description>
+    <author email="support@helper.com" href="http://helper.com">Машинист</author>
+    <content src="index.html" />
+    
+    <preference name="KeepRunning" value="true" />
+    <preference name="AllowInlineMediaPlayback" value="true" />
+    
+    <plugin name="cordova-plugin-geolocation" spec="^4.1.0" />
+    
+    <access origin="*" />
+    <allow-intent href="http://*/*" />
+    <allow-intent href="https://*/*" />
+</widget>
