@@ -31,11 +31,28 @@ jobs:
         cordova create app_workspace com.assistant.bg TrainHelper
         cd app_workspace
         cordova platform add android
+        
+        # Очищаем дефолтную папку www и копируем твой index.html
         rm -rf www/*
-        cd ..
-        cp index.html app_workspace/www/index.html
-        cp config.xml app_workspace/config.xml
-        cd app_workspace
+        cp ../index.html www/index.html
+        
+        # Перезаписываем config.xml встроенным рабочим шаблоном с GPS-плагином
+        cat <<EOF > config.xml
+        <?xml version='1.0' encoding='utf-8'?>
+        <widget id="com.assistant.bg" version="1.0.0" xmlns="http://www.w3.org/ns/widgets">
+            <name>Помощник Машиниста</name>
+            <description>Контроль профиля БЧ, GPS навигация и ТУ-3</description>
+            <author email="support@helper.com">Машинист</author>
+            <content src="index.html" />
+            <preference name="KeepRunning" value="true" />
+            <preference name="AllowInlineMediaPlayback" value="true" />
+            <plugin name="cordova-plugin-geolocation" spec="^4.1.0" />
+            <access origin="*" />
+            <allow-intent href="http://*/*" />
+            <allow-intent href="https://*/*" />
+        </widget>
+        EOF
+        
         cordova build android --no-telemetry
 
     - name: Upload Final APK
@@ -43,4 +60,3 @@ jobs:
       with:
         name: Помощник_Машиниста_БЧ
         path: app_workspace/platforms/android/app/build/outputs/apk/debug/*.apk
-        
