@@ -36,8 +36,9 @@ jobs:
         cp ../config.xml config.xml
         cordova build android --no-telemetry
 
-    - name: Upload Final APK
+    -     - name: Upload Final APK
       uses: actions/upload-artifact@v4
       with:
-        name: driver-assistant-apk
-        path: app_workspace/platforms/android/app/build/outputs/apk/debug/app-debug.apk
+        name: Помощник_Машиниста_БЧ
+        path: app_workspace/platforms/android/app/build/outputs/apk/debug/*.apk
+
