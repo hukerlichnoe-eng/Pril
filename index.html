@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Бортовой Помощник Машиниста БЧ v2.1</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --accent-color: #00adb5;
+            --text-color: #eeeeee;
+            --highlight-bg: #2d3748;
+            --highlight-border: #4299e1;
+        }
+        body { 
+            margin: 0; font-family: sans-serif; background: var(--bg-color); color: var(--text-color); padding: 15px; box-sizing: border-box;
+        }
+        .card { 
+            background: var(--card-bg); padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); 
+        }
+        h3 { margin-top: 0; color: var(--accent-color); border-bottom: 1px solid #333; padding-bottom: 5px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 5px; }
+        label { font-size: 12px; display: block; margin-bottom: 4px; color: #b3b3b3; }
+        input { width: 100%; padding: 10px; background: #2d2d2d; border: 1px solid #444; color: #fff; border-radius: 4px; box-sizing: border-box; margin-bottom: 10px; }
+        .btn { display: block; width: 100%; padding: 12px; border: none; color: white; font-weight: bold; border-radius: 4px; cursor: pointer; text-align: center; box-sizing: border-box; margin-top: 5px; font-size: 12px; text-transform: uppercase; }
+        .btn-accent { background: var(--accent-color); }
+        .btn-danger { background: #ff4141; }
+        .btn-share { background: #4caf50; }
+        .btn-warn { background: #ffea00; color: #000; }
+        .btn-gray { background: #555; }
+        #map { width: 100%; height: 300px; border-radius: 8px; border: 1px solid #444; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h3>📈 Профиль пути и ЖД-Карта</h3>
+        <canvas id="simCanvas" width="600" height="160"></canvas>
+        <div id="map"></div>
+        <button class="btn btn-danger" style="padding: 15px; font-size: 14px;" onclick="activateAudio()">🔊 АКТИВИРОВАТЬ ИНФОРМАТОР НА ЛИНИИ</button>
+        <div id="telemetry" style="margin-top:10px; font-size:13px; background: #151515; padding: 10px; border-radius: 5px; line-height: 1.5;">
+            Ожидание запуска...
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>🛠 Ручная фиксация ЖД-объектов на ходу</h3>
+        <div style="margin-bottom: 10px;">
+            <label>📏 Длина поезда (метров):</label>
+            <input type="number" id="trainLengthInput" value="600" onchange="trainLength = parseInt(this.value);">
+        </div>
+        
+        <label>Нажимайте при проследовании кабиной локомотива:</label>
+        <div class="grid-2" style="margin-bottom: 10px;">
+            <button class="btn btn-warn" onclick="addGpsObject('Нейтральная вставка', 'circle', '#ffea00')">📌 Нейтральная вставка</button>
+            <button class="btn btn-danger" onclick="addGpsObject('Ограничение 60', 'circle', '#ff4141')">⚠️ Ограничение 60</button>
+        </div>
+        
+        <div class="grid-2">
+            <button class="btn btn-accent" onclick="addGpsObject('Светофор', 'sem', '#00ff00')">🚦 Записать Светофор</button>
+            <button class="btn btn-gray" onclick="addGpsObject('Км столб', 'line', '#ffffff')">⚪ Записать Км Столб</button>
+        </div>
+        <div id="log-status" style="margin-top:10px; font-size:13px; color: #00adb5; font-weight: bold; text-align: center;"></div>
+    </div>
+
+    <div class="card">
+        <h3>💾 Сохранение маршрута</h3>
+        <button class="btn btn-share" onclick="exportRoute()">⬇️ Сделать экспорт маршрута</button>
+    </div>
+
+    <script>
+        // Инициализация карты Leaflet (Минск)
+        const map = L.map('map').setView([53.8901, 27.5505], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+
+        // Маркеры состава
+        const headMarker = L.circleMarker([53.8901, 27.5505], {radius: 7, color: '#ff4141', fillColor: '#ff4141', fillOpacity: 1}).addTo(map);
+        const midMarker = L.circleMarker([53.8901, 27.5505], {radius: 4, color: '#ffea00', fillColor: '#ffea00', fillOpacity: 1}).addTo(map);
+        const tailMarker = L.circleMarker([53.8901, 27.5505], {radius: 5, color: '#00adb5', fillColor: '#00adb5', fillOpacity: 1}).addTo(map);
+        const trainLine = L.polyline([], {color: '#ff4141', weight: 4}).addTo(map);
+
+        let geoObjects = []; // Массив для хранения всех зафиксированных столбов, светофоров и вставок
+        let trainX = 500;
+        let trainLength = 600;
+        let currentSpeed = 0;
+        let lastLat = 53.8901, lastLon = 27.5505;
+        let gpsStatus = "Ожидание активации GPS";
+
+        // Функция фиксации объекта по текущим координатам локомотива
+        function addGpsObject(name, drawType, color) {
+            if(!lastLat || !lastLon) { alert("Нет сигнала GPS!"); return; }
+            
+            // Запоминаем объект со всеми географическими данными
+            const newObj = {
+                name: name,
+                lat: lastLat,
+                lon: lastLon,
+                type: drawType,
+                color: color,
+                meterMark: trainX
+            };
+            
+            geoObjects.push(newObj);
+            renderObjectOnMap(newObj); // Сразу рисуем на карте
+
+            document.getElementById('log-status').innerText = `Записан объект: ${name}!`;
+            if('speechSynthesis' in window) {
+                window.speechSynthesis.speak(new SpeechSynthesisUtterance(`${name} внесен в карту`));
+            }
+            setTimeout(() => { document.getElementById('log-status').innerText = ""; }, 3000);
+        }
+
+        // Отрисовка объектов на карте в зависимости от типа (полоски, кружки)
+        function renderObjectOnMap(obj) {
+            if (obj.type === 'line') {
+                // Километровый столб рисуем в виде маленькой полосочки (длиной ~15 метров) перпендикулярно ходу
+                const p1 = [obj.lat - 0.0001, obj.lon - 0.0001];
+                const p2 = [obj.lat + 0.0001, obj.lon + 0.0001];
+                L.polyline([p1, p2], {color: obj.color, weight: 5}).addTo(map).bindPopup(obj.name);
+            } 
+            else if (obj.type === 'sem') {
+                // Светофор рисуем маленьким синим/зеленым контуром с точкой внутри
+                L.circleMarker([obj.lat, obj.lon], {
+                    radius: 5, color: '#fff', weight: 2, fillColor: '#00ff00', fillOpacity: 0.9
+                }).addTo(map).bindPopup("ЖД Светофор");
+            } 
+            else {
+                // Вставки и ограничения скорости — обычные круглые маркеры
+                L.circleMarker([obj.lat, obj.lon], {
+                    radius: 6, color: obj.color, fillColor: obj.color, fillOpacity: 0.8
+                }).addTo(map).bindPopup(obj.name);
+            }
+        }
+
+        // Симуляция движения состава по точкам
+        function calculateOffsetCoords(baseLat, baseLon, offsetMeters, bearing) {
+            const R = 6335000;
+            const d = offsetMeters / R;
+            const lat1 = baseLat * Math.PI / 180;
+            const lon1 = baseLon * Math.PI / 180;
+            const brng = bearing * Math.PI / 180;
+            const lat2 = Math.asin(Math.sin(lat1)*Math.cos(d) + Math.cos(lat1)*Math.sin(d)*Math.cos(brng));
+            const lon2 = lon1 + Math.atan2(Math.sin(brng)*Math.sin(d)*Math.cos(lat1), Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
+            return [lat2 * 180 / Math.PI, lon2 * 180 / Math.PI];
+        }
+
+        function activateAudio() {
+            gpsStatus = "Поиск спутников...";
+            if ("geolocation" in navigator) {
+                navigator.geolocation.watchPosition((position) => {
+                    lastLat = position.coords.latitude;
+                    lastLon = position.coords.longitude;
+                    currentSpeed = position.coords.speed ? Math.round(position.coords.speed * 3.6) : 0;
+                    if(currentSpeed === 0) currentSpeed = 50; // Для тестов на месте
+                    trainX += (currentSpeed / 3.6);
+                    gpsStatus = "Спутники БЧ: Активны";
+                }, () => {
+                    trainX += (currentSpeed / 3.6);
+                }, { enableHighAccuracy: true });
+            }
+            setInterval(drawLoop, 1000);
+        }
+
+        function drawLoop() {
+            if(lastLat && lastLon) {
+                headMarker.setLatLng([lastLat, lastLon]);
+                const midCoords = calculateOffsetCoords(lastLat, lastLon, -(trainLength / 2), 220);
+                const tailCoords = calculateOffsetCoords(lastLat, lastLon, -trainLength, 220);
+                
+                midMarker.setLatLng(midCoords);
+                tailMarker.setLatLng(tailCoords);
+                trainLine.setLatLngs([[lastLat, lastLon], midCoords, tailCoords]);
+                map.panTo([lastLat, lastLon]);
+
+                document.getElementById('telemetry').innerHTML = `
+                    📡 <strong>Навигация:</strong> ${gpsStatus}<br>
+                    🚂 <strong>Скорость:</strong> ${currentSpeed} км/ч | Длина состава: ${trainLength} м.<br>
+                    📍 <strong>Координаты локомотива:</strong> ${lastLat.toFixed(5)}, ${lastLon.toFixed(5)}
+                `;
+            }
+        }
+
+        function exportRoute() {
+            const dataStr = JSON.stringify(geoObjects, null, 2);
+            const blob = new Blob([dataStr], { type: "application/json" });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = `Полный_Маршрут_БЧ.json`;
+            link.click();
+        }
+    </script>
+</body>
+</html>
