@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Бортовой Комплекс БЧ v10.5 (Автономный)</title>
+    <style>
+        :root {
+            --bg-color: #0d0e12;
+            --card-bg: #16181f;
+            --accent-color: #00b4d8;
+            --text-color: #f1f3f5;
+            --highlight-bg: #1e222b;
+            --highlight-border: #0077b6;
+            --success-color: #2a9d8f;
+            --danger-color: #e63946;
+            --warning-color: #ffb703;
+            --purple-color: #9b59b6;
+            --orange-color: #f4a261;
+        }
+        body { 
+            margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color); color: var(--text-color); padding: 12px; box-sizing: border-box;
+        }
+        .card { 
+            background: var(--card-bg); padding: 14px; border-radius: 10px; margin-bottom: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); border: 1px solid #232733;
+        }
+        h2, h3 { margin-top: 0; color: var(--accent-color); border-bottom: 1px solid #232733; padding-bottom: 6px; font-size: 16px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+        label { font-size: 11px; display: block; margin-bottom: 4px; color: #9c8c8c; font-weight: bold; text-transform: uppercase; }
+        input, select { width: 100%; padding: 10px; background: #1f232e; border: 1px solid #2d3345; color: #fff; border-radius: 6px; box-sizing: border-box; margin-bottom: 8px; font-size: 14px; }
+        .btn { display: block; width: 100%; padding: 12px; border: none; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; text-align: center; box-sizing: border-box; margin-top: 8px; font-size: 13px; text-transform: uppercase; transition: background 0.2s, transform 0.1s; }
+        .btn:active { transform: scale(0.98); }
+        .btn-accent { background: var(--accent-color); color: #000; }
+        .btn-danger { background: var(--danger-color); }
+        .btn-warn { background: var(--warning-color); color: #000; }
+        .btn-purple { background: var(--purple-color); }
+        .btn-orange { background: var(--orange-color); }
+        .btn-gray { background: #2d3345; border: 1px solid #414962; }
+        .btn-success { background: var(--success-color); }
+        canvas { background-color: #090a0f; border: 1px solid #232733; border-radius: 8px; width: 100%; box-sizing: border-box; display: block; margin-bottom: 10px; }
+        .table-wrapper { overflow-x: auto; margin-top: 12px; border-radius: 6px; border: 1px solid #232733; }
+        table { width: 100%; border-collapse: collapse; background: #0f1115; font-size: 12px; text-align: left; }
+        th, td { padding: 8px 10px; border: 1px solid #232733; }
+        th { background: #16181f; color: var(--accent-color); }
+        tr:nth-child(even) { background: #13151a; }
+        .status-box { font-size: 13px; line-height: 1.5; background: #090a0f; padding: 12px; border-radius: 6px; border-left: 4px solid var(--accent-color); margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h3>📈 Профиль уклонов пути (Пометровый)</h3>
+        <canvas id="profileCanvas" width="600" height="150"></canvas>
+        
+        <h3>🧭 Электронный ЖД Радар курса состава</h3>
+        <canvas id="radarCanvas" width="600" height="220"></canvas>
+        
+        <button class="btn btn-danger" style="padding: 15px; font-size: 14px;" onclick="activateAudio()">🔊 ВКЛЮЧИТЬ СПУТНИКОВЫЙ МОНИТОРИНГ БЧ</button>
+        
+        <div id="telemetry" class="status-box">
+            Система готова. Загрузите автономную базу или создайте новую из GeoJSON.
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>🛠 Параметры состава и Разметка ТРА</h3>
+        <div class="grid-2">
+            <div>
+                <label>📏 Длина поезда (м):</label>
+                <input type="number" id="trainLengthInput" value="600" onchange="updateTrainLength(this.value)">
+            </div>
+            <div>
+                <label>📢 Фильтр оповещений:</label>
+                <select id="voiceNotificationFilter">
+                    <option value="all">Все объекты ТРА</option>
+                    <option value="vstavka">Только нейтральные вставки</option>
+                    <option value="curve">Только кривые &lt; 650м</option>
+                    <option value="speed">Только ограничения скорости</option>
+                    <option value="crossing">Только переезды</option>
+                    <option value="none">Отключить звук</option>
+                </select>
+            </div>
+        </div>
+
+        <p style="font-size: 12px; color: #888; margin: 4px 0;">Фиксация объектов ТРА головой локомотива:</p>
+        <div class="grid-3">
+            <button class="btn btn-warn" onclick="addCurrentObject('Нейтральная вставка', '#ffb703')">📌 Вставка</button>
+            <button class="btn btn-purple" onclick="addCurrentObject('Кривая менее 650м', '#9b59b6')">↪️ Кривая</button>
+            <button class="btn btn-danger" onclick="addCurrentObject('Ограничение скорости', '#e63946')">⚠️ Скорость</button>
+        </div>
+        <div class="grid-2">
+            <button class="btn btn-orange" onclick="addCurrentObject('Переезд', '#f4a261')">🚗 Переезд</button>
+            <button class="btn btn-accent" onclick="addCurrentObject('Светофор станции', '#00b4d8')">🚦 Светофор ст.</button>
+        </div>
+        <div id="log-status" style="margin-top:8px; font-size:12px; color: var(--accent-color); font-weight: bold; text-align: center;"></div>
+    </div>
+
+    <div class="card">
+        <h3>💾 Загрузка тяжелых ЖД данных и Авто-Рельеф</h3>
+        <div style="background: #1f232e; padding: 10px; border-radius: 6px; border: 1px dashed #414962; text-align: center;">
+            <label class="btn btn-accent" style="margin: 0; cursor: pointer; color:#000;">🗺️ 1. ВЫБРАТЬ ФАЙЛ ПУТЕЙ (.GEOJSON)
+                <input type="file" style="display:none;" accept="*/*" onchange="importRawGeoJson(this)">
+            </label>
+            <div id="sync-status" style="margin-top:8px; font-size:12px; color:#aaa; line-height: 1.4;">
+                Используйте дома с интернетом для автоматической склейки путей с рельефом высот.
+            </div>
+            <button id="downloadPackBtn" class="btn btn-success" style="display: none; margin-top: 10px;" onclick="exportFullPackage()">📥 2. ЭКСПОРТИРОВАТЬ ЗАПИСАННЫЙ МАРШРУТ (.JSON)</button>
+        </div>
+        
+        <div style="margin-top: 12px;">
+            <label class="btn btn-gray" style="display:block; text-align:center; cursor: pointer;">📂 ВОССТАНОВИТЬ БАЗУ (.JSON) Без интернета
+                <input type="file" style="display:none;" accept="*/*" onchange="importFullPackage(this)">
+            </label>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>📑 Электронный Журнал ТУ-3 (БЧ)</h2>
+        <div class="grid-2">
+            <div><label>1) Дата Явки</label><input type="date" id="dateYavka"></div>
+            <div><label>Время Явки</label><input type="time" id="timeYavka"></div>
+        </div>
+        <div class="grid-2">
+            <div><label>2) Место Явки (Станция)</label><input type="text" id="locYavka" placeholder="Минск-Сортировочный"></div>
+            <div><label>3) Направление (Куда ездил)</label><input type="text" id="routeDirection" placeholder="на Молодечно"></div>
+        </div>
+        <div class="grid-2">
+            <div><label>4) Место Сдачи (Станция)</label><input type="text" id="locSdacha" placeholder="Молодечно"></div>
+            <div><label>5) Дата Сдачи</label><input type="date" id="dateSdacha"></div>
+        </div>
+        <div><label>Время Сдачи</label><input type="time" id="timeSdacha"></div>
+        
+        <button class="btn btn-accent" onclick="processAndSaveTU3()">Рассчитать и сохранить в базу</button>
+    </div>
+
+    <div class="card" style="border-left: 4px solid var(--success-color);">
+        <h3>📊 Месячный баланс часов</h3>
+        <div id="results" style="font-size:13px; line-height:1.5;">Заполните ТУ-3 для вывода статистики.</div>
+    </div>
+
+    <div class="card">
+        <h3>🗄️ История поездок в памяти Xiaomi</h3>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Дата</th>
+                        <th>Маршрут</th>
+                        <th>Всего</th>
+                        <th>Ночь 35%</th>
+                        <th>Ночь 40%</th>
+                        <th>Удалить</th>
+                    </tr>
+                </thead>
+                <tbody id="tu3TableBody"></tbody>
+            </table>
+        </div>
+        <button class="btn btn-danger" style="padding:6px; font-size:10px; margin-top:10px;" onclick="clearTU3Database()">⚠️ Очистить историю ТУ-3</button>
+    </div>
+
+    <script>
+        // Настройка дат по умолчанию
+        const todayStr = new Date().toISOString().split('T')[0];
+        document.getElementById('dateYavka').value = todayStr;
+        document.getElementById('dateSdacha').value = todayStr;
+
+        // Полотна графики
+        const pCanvas = document.getElementById('profileCanvas'); const pCtx = pCanvas.getContext('2d');
+        const rCanvas = document.getElementById('radarCanvas'); const rCtx = rCanvas.getContext('2d');
+
+        // Переменные путей
+        let routeNodes = [];      
+        let objectsDb = [];       
+        let terrain = [];         
+
+        let trainX = 0; let trainLength = 600; let currentSpeed = 0; let currentAltitude = 150;
+        let lastLat = null; let lastLon = null; let currentBearing = 0; let gpsStatus = "Оффлайн";
+        let spokenObjects = {};
+
+        function updateTrainLength(val) { trainLength = parseInt(val) || 600; }
+
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const u = new SpeechSynthesisUtterance(text); u.lang = 'ru-RU'; window.speechSynthesis.speak(u);
+            }
+        }
+
+        function activateAudio() {
+            speak("Автономный комплекс БЧ активирован. Поиск спутников.");
+            gpsStatus = "Поиск GPS...";
+            startGPSWatch();
+        }
+
+        function addCurrentObject(name, color) {
+            if (lastLat === null || lastLon === null) { alert("Спутники не найдены! Невозможно привязать точку."); return; }
+            const obj = { name, lat: lastLat, lon: lastLon, color: color, meterMark: trainX };
+            objectsDb.push(obj);
+            document.getElementById('log-status').innerText = `Записано: ${name} (${Math.round(trainX)} м)`;
+            speak(`${name} добавлен`);
+            setTimeout(() => { document.getElementById('log-status').innerText = ""; }, 3000);
+        }
+
+        function getDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371000; const dLat = (lat2 - lat1) * Math.PI / 180; const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        function getBearing(lat1, lon1, lat2, lon2) {
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const lat1Rad = lat1 * Math.PI / 180; const lat2Rad = lat2 * Math.PI / 180;
+            const y = Math.sin(dLon) * Math.cos(lat2Rad);
+            const x = Math.cos(lat1Rad) * Math.sin(lat2Rad) - Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLon);
+            return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+        }
+
+        function findClosestRoutePoint(lat, lon) {
+            if (routeNodes.length === 0) return null;
+            let minDist = Infinity; let closestIdx = 0;
+            for (let i = 0; i < routeNodes.length; i++) {
+                let d = getDistance(lat, lon, routeNodes[i].lat, routeNodes[i].lon);
+                if (d < minDist) { minDist = d; closestIdx = i; }
+            }
+            return { node: routeNodes[closestIdx], dist: minDist, index: closestIdx };
+        }
+
+        function startGPSWatch() {
+            if (navigator.geolocation) {
+                navigator.geolocation.watchPosition(
+                    (p) => {
+                        let lat = p.coords.latitude; let lon = p.coords.longitude;
+                        gpsStatus = "Спутники БЧ: Активны";
+                        currentSpeed = p.coords.speed ? Math.round(p.coords.speed * 3.6) : 0;
+                        
+                        let snap = findClosestRoutePoint(lat, lon);
+                        if (snap && snap.dist < 350) { 
+                            trainX = snap.node.meterMark;
+                            lastLat = snap.node.lat; lastLon = snap.node.lon;
+                            currentAltitude = Math.round(terrain[Math.floor(trainX)] || snap.node.height || 150);
+                            
+                            if (snap.index < routeNodes.length - 1) {
+                                currentBearing = getBearing(lastLat, lastLon, routeNodes[snap.index+1].lat, routeNodes[snap.index+1].lon);
+                            }
+                        } else {
+                            if(lastLat && lastLon && getDistance(lastLat, lastLon, lat, lon) > 1.5) {
+                                currentBearing = getBearing(lastLat, lastLon, lat, lon);
+                            }
+                            lastLat = lat; lastLon = lon;
+                            if(p.coords.altitude) currentAltitude = Math.round(p.coords.altitude);
+                        }
+
+                        const filter = document.getElementById('voiceNotificationFilter').value;
+                        if (filter !== 'none') {
+                            objectsDb.forEach(obj => {
+                                let d = getDistance(lastLat, lastLon, obj.lat, obj.lon);
+                                let key = `${obj.name}_${obj.meterMark}`;
+                                if (d <= 530 && d >= 470 && !spokenObjects[key]) {
+                                    speak("Внимание! Через 500 метров " + obj.name);
+                                    spokenObjects[key] = true;
+                                }
+                            });
+                        }
+                    },
+                    (err) => { gpsStatus = "Ошибка поиска GPS"; },
+                    { enableHighAccuracy: true, maximumAge: 0 }
+                );
+            }
+        }
+
+        function extractCoords(g) {
+            if (!g) return [];
+            if (g.type === 'LineString') return g.coordinates;
+            if (g.type === 'MultiLineString') return g.coordinates.reduce((a, c) => a.concat(c), []);
+            if (g.type === 'GeometryCollection') return g.geometries.reduce((a, g2) => a.concat(extractCoords(g2)), []);
+            return [];
+        }
+
+        // БРОНЕБОЙНЫЙ ИМПОРТ И УМНОЕ СЖАТИЕ ПОД ЛИМИТЫ API
+        function importRawGeoJson(input) {
+            const file = input.files[0]; if(!file) return;
+            document.getElementById('sync-status').innerHTML = "⏳ Оптимизация тяжелого файла путей...";
+            const r = new FileReader();
+            r.onload = async function(e) {
+                try {
+                    let json = JSON.parse(e.target.result);
+                    let fe = json.features ? json.features : (Array.isArray(json) ? json : [json]);
+                    let raw = [];
+                    
+                    fe.forEach(f => { raw = raw.concat(extractCoords(f.geometry || f)); });
+                    let valid = raw.filter(pt => Array.isArray(pt) && pt.length >= 2);
+
+                    if(valid.length === 0) { 
+                        document.getElementById('sync-status').innerHTML = "<span style='color:var(--danger-color)'>❌ Линии путей не обнаружены в файле!</span>";
+                        return; 
+                    }
+
+                    // Принудительно жмем трек до 300 ключевых точек, чтобы сервер высот не выдавал ошибку
+                    let targetPoints = 300;
+                    let step = Math.max(1, Math.floor(valid.length / targetPoints));
+                    let lats = [], lons = [];
+                    
+                    for(let i=0; i<valid.length; i+=step) {
+                        if (lats.length < targetPoints) {
+                            lons.push(Number(valid[i][0]).toFixed(5)); 
+                            lats.push(Number(valid[i][1]).toFixed(5));
+                        }
+                    }
+
+                    document.getElementById('sync-status').innerText = `⏳ Запрос профиля высот рельефа для ${lats.length} точек...`;
+                    
+                    let res = await fetch(`https://api.open-meteo.com/v1/elevation?latitude=${lats.join(',')}&longitude=${lons.join(',')}`);
+                    if (!res.ok) throw new Error(`Ошибка API. Статус сервера: ${res.status}`);
+                    
+                    let resJson = await res.json();
+                    let elev = resJson.elevation;
+
+                    if(!elev || elev.length === 0) throw new Error("Сервер вернул пустой рельеф.");
+
+                    routeNodes = []; terrain = [];
+                    let totalM = 0;
+
+                    for(let i=0; i<elev.length - 1; i++) {
+                        let lat1 = parseFloat(lats[i]), lon1 = parseFloat(lons[i]);
+                        let lat2 = parseFloat(lats[i+1]), lon2 = parseFloat(lons[i+1]);
+                        let d = getDistance(lat1, lon1, lat2, lon2);
+                        
+                        routeNodes.push({ lat: lat1, lon: lon1, height: elev[i], meterMark: totalM });
+                        
+                        let segments = Math.max(1, Math.floor(d));
+                        let hStep = (elev[i+1] - elev[i]) / segments;
+                        for(let j=0; j<segments; j++) {
+                            terrain.push(elev[i] + (hStep * j));
+                        }
+                        totalM += d;
+                    }
+                    
+                    document.getElementById('sync-status').innerHTML = `<span style="color:var(--success-color); font-weight:bold;">✔️ Профиль уклонов успешно создан! Линия длиной ${(totalM/1000).toFixed(1)} км упакована.</span>`;
+                    document.getElementById('downloadPackBtn').style.display = "block";
+                    speak("Автономный пакет успешно собран. Сохраните его на телефон.");
+                } catch(c) {
+                    console.error(c);
+                    document.getElementById('sync-status').innerHTML = `<span style='color:var(--danger-color)'>❌ Ошибка API. Слишком тяжелый файл или нет сети.</span>`;
+                }
+            };
+            r.readAsText(file);
+        }
+
+        function exportFullPackage() {
+            let pack = { routeNodes, objectsDb, terrain };
+            let blob = new Blob([JSON.stringify(pack)], {type: "application/json"});
+            let a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+            a.download = "Автономный_Маршрут_БЧ.json"; a.click();
+        }
+
+        function importFullPackage(input) {
+            const file = input.files[0]; if(!file) return;
+            const r = new FileReader();
+            r.onload = function(e) {
+                try {
+                    let pack = JSON.parse(e.target.result);
+                    if(pack.routeNodes && pack.terrain) {
+                        routeNodes = pack.routeNodes;
+                        objectsDb = pack.objectsDb || [];
+                        terrain = pack.terrain;
+                        alert(`Пакет успешно развернут! Контур пути: ${(terrain.length/1000).toFixed(1)} км. Работа полностью автономна.`);
+                        speak("Бортовая база загружена. Счастливого пути.");
+                    } else {
+                        alert("Некорректная структура автономного пакета.");
+                    }
+                } catch(err) { alert("Не удалось прочесть .json файл базы!"); }
+            };
+            r.readAsText(file);
+        }
+
+        // ЖУРНАЛ ТУ-3
+        function processAndSaveTU3() {
+            const dY = document.getElementById('dateYavka').value; const tY = document.getElementById('timeYavka').value;
+            const lY = document.getElementById('locYavka').value || "Минск"; const dir = document.getElementById('routeDirection').value || "Молодечно";
+            const lS = document.getElementById('locSdacha').value || "Молодечно";
+            const dS = document.getElementById('dateSdacha').value; const tS = document.getElementById('timeSdacha').value;
+
+            if(!tY || !tS) { alert("Укажите точное время!"); return; }
+            const start = new Date(`${dY}T${tY}`); const end = new Date(`${dS}T${tS}`);
+            if(end <= start) { alert("Время сдачи не может быть раньше явки!"); return; }
+
+            let totalMin = Math.round((end - start) / 60000);
+            let nightMin = 0; let iter = new Date(start);
+            while(iter < end) {
+                let h = iter.getHours(); if(h >= 22 || h < 6) nightMin++;
+                iter.setMinutes(iter.getMinutes() + 1);
+            }
+            let n35 = 0, n40 = 0;
+            if(nightMin > 0) { if((nightMin / totalMin) >= 0.5) n40 = nightMin; else n35 = nightMin; }
+
+            let db = JSON.parse(localStorage.getItem('tu3_v10') || '[]');
+            db.push({ id: Date.now(), dateYavka: dY, route: `${lY}➔${dir}➔${lS}`, total: totalMin, n35, n40 });
+            localStorage.setItem('tu3_v10', JSON.stringify(db));
+            renderTU3Data();
+        }
+
+        const fmt = m => `${Math.floor(m/60)}ч ${m%60}м`;
+
+        function renderTU3Data() {
+            let db = JSON.parse(localStorage.getItem('tu3_v10') || '[]');
+            let tbody = document.getElementById('tu3TableBody'); tbody.innerHTML = '';
+            let currentMonth = new Date().toISOString().substring(0,7);
+            let mTotal = 0;
+
+            db.sort((a,b)=>b.id-a.id).forEach(r => {
+                if(r.dateYavka && r.dateYavka.startsWith(currentMonth)) mTotal += r.total;
+                tbody.innerHTML += `<tr>
+                    <td>${r.dateYavka}</td><td>${r.route}</td><td><b>${fmt(r.total)}</b></td>
+                    <td style="color:var(--warning-color)">${r.n35?fmt(r.n35):'-'}</td><td style="color:var(--danger-color)">${r.n40?fmt(r.n40):'-'}</td>
+                    <td><button style="background:none;border:0;color:red;cursor:pointer;" onclick="deleteTU3(${r.id})">❌</button></td>
+                </tr>`;
+            });
+            
+            if(db.length > 0) {
+                document.getElementById('results').innerHTML = `🎯 <b>В текущем месяце (${currentMonth}):</b> Отработано всего: <span style="color:var(--accent-color);font-size:15px;font-weight:bold;">${fmt(mTotal)}</span>`;
+            } else {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#555;">Журнал пуст</td></tr>`;
+            }
+        }
+        function deleteTU3(id) { let db = JSON.parse(localStorage.getItem('tu3_v10') || '[]'); db=db.filter(r=>r.id!==id); localStorage.setItem('tu3_v10',JSON.stringify(db)); renderTU3Data(); }
+        function clearTU3Database() { if(confirm("Очистить журнал?")) { localStorage.removeItem('tu3_v10'); renderTU3Data(); } }
+
+        // ЦИКЛ ОТРИСОВКИ РАДАРА И КАНВАС-ПРОФИЛЯ
+        function draw() {
+            // 1. Профиль уклонов
+            pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
+            let viewMeters = 3000; let scale = viewMeters / pCanvas.width;
+            let offset = trainX - (viewMeters / 2);
+
+            const getH = (m) => terrain[Math.floor(m)] || 150;
+            const getScreenY = (m) => pCanvas.height - (getH(m) - 100) * 1.3 - 20;
+
+            pCtx.beginPath(); pCtx.strokeStyle = "#222530"; pCtx.lineWidth = 1;
+            for(let i=0; i<pCanvas.width; i+=40) { pCtx.moveTo(i, 0); pCtx.lineTo(i, pCanvas.height); } pCtx.stroke();
+
+            pCtx.beginPath(); pCtx.strokeStyle = "#414962"; pCtx.lineWidth = 3;
+            for(let x=0; x<pCanvas.width; x++) {
+                let m = x * scale + offset;
+                if(x===0) pCtx.moveTo(x, getScreenY(m)); else pCtx.lineTo(x, getScreenY(m));
+            }
+            pCtx.stroke();
+
+            let headX = (trainX - offset)/scale; let headY = getScreenY(trainX);
+            let tailX = (trainX - trainLength - offset)/scale;
+            pCtx.beginPath(); pCtx.strokeStyle = "rgba(0, 180, 216, 0.4)"; pCtx.lineWidth = 8;
+            pCtx.moveTo(tailX, getScreenY(trainX - trainLength) - 4); pCtx.lineTo(headX, headY - 4); pCtx.stroke();
+
+            pCtx.fillStyle = "#e63946"; pCtx.beginPath(); pCtx.arc(headX, headY - 4, 5, 0, Math.PI*2); pCtx.fill();
+
+            objectsDb.forEach(obj => {
+                let sX = (obj.meterMark - offset)/scale;
+                if(sX >= 0 && sX <= pCanvas.width) {
+                    let sY = getScreenY(obj.meterMark);
+                    pCtx.fillStyle = obj.color; pCtx.fillRect(sX - 1, sY - 40, 2, 40);
+                    pCtx.beginPath(); pCtx.arc(sX, sY - 40, 4, 0, Math.PI*2); pCtx.fill();
+                }
+            });
+
+            // 2. Векторный ЖД Радар курса состава
+            rCtx.clearRect(0, 0, rCanvas.width, rCanvas.height);
+            let cx = rCanvas.width / 2; let cy = rCanvas.height / 2;
+
+            rCtx.strokeStyle = "#1f232e"; rCtx.lineWidth = 1;
+            [40, 80, 110].forEach(r => { rCtx.beginPath(); rCtx.arc(cx, cy, r, 0, Math.PI*2); rCtx.stroke(); });
+
+            if(lastLat !== null && lastLon !== null && routeNodes.length > 0) {
+                rCtx.save(); rCtx.translate(cx, cy); rCtx.rotate(-currentBearing * Math.PI / 180);
+
+                rCtx.beginPath(); rCtx.strokeStyle = "#00b4d8"; rCtx.lineWidth = 4; rCtx.lineCap = "round";
+                let first = true;
+                routeNodes.forEach(n => {
+                    let dx = (n.lon - lastLon) * 75000;
+                    let dy = -(n.lat - lastLat) * 120000;
+                    if(Math.abs(dx) < 200 && Math.abs(dy) < 200) {
+                        if(first) { rCtx.moveTo(dx, dy); first = false; } else rCtx.lineTo(dx, dy);
+                    }
+                });
+                rCtx.stroke();
+
+                objectsDb.forEach(obj => {
+                    let dx = (obj.lon - lastLon) * 75000; let dy = -(obj.lat - lastLat) * 120000;
+                    if(Math.abs(dx) < 200 && Math.abs(dy) < 200) {
+                        rCtx.fillStyle = obj.color; rCtx.beginPath(); rCtx.arc(dx, dy, 6, 0, Math.PI*2); rCtx.fill();
+                        rCtx.fillStyle = "#fff"; rCtx.font = "bold 9px sans-serif";
+                        rCtx.fillText(obj.name.substring(0,7)+".", dx + 8, dy + 3);
+                    }
+                });
+                rCtx.restore();
+            }
+
+            rCtx.fillStyle = "#e63946"; rCtx.beginPath(); rCtx.moveTo(cx, cy - 10); rCtx.lineTo(cx - 6, cy + 8); rCtx.lineTo(cx + 6, cy + 8); rCtx.closePath(); rCtx.fill();
+            rCtx.strokeStyle = "#fff"; rCtx.stroke();
+
+            document.getElementById('telemetry').innerHTML = `
+                🛰️ <b>Мониторинг БЧ:</b> ${gpsStatus}<br>
+                🚂 <b>Скорость:</b> <span style="color:var(--accent-color); font-size:22px; font-weight:bold;">${currentSpeed} км/ч</span> | ⛰️ <b>Высота:</b> ${currentAltitude} м.<br>
+                🧭 <b>Курс локомотива:</b> ${Math.round(currentBearing)}° | 📍 <b>Пикетаж:</b> ${Math.round(trainX)} м.
+            `;
+            requestAnimationFrame(draw);
+        }
+
+        window.onload = function() { renderTU3Data(); draw(); };
+    </script>
+</body>
+</html>
