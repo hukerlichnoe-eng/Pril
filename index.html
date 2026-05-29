@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Бортовой Помощник БЧ v9.0 (Стабильный)</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        :root {
+            --bg-color: #0d0e12;
+            --card-bg: #16181f;
+            --accent-color: #00b4d8;
+            --text-color: #f1f3f5;
+            --success-color: #2a9d8f;
+            --danger-color: #e63946;
+            --warning-color: #ffb703;
+            --purple-color: #9b59b6;
+            --orange-color: #f4a261;
+        }
+        body { 
+            margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color); color: var(--text-color); padding: 12px; box-sizing: border-box;
+        }
+        .card { 
+            background: var(--card-bg); padding: 14px; border-radius: 10px; margin-bottom: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); border: 1px solid #232733;
+        }
+        h2, h3 { margin-top: 0; color: var(--accent-color); border-bottom: 1px solid #232733; padding-bottom: 6px; font-size: 16px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+        label { font-size: 11px; display: block; margin-bottom: 4px; color: #9c8c8c; font-weight: bold; text-transform: uppercase; }
+        input, select { width: 100%; padding: 10px; background: #1f232e; border: 1px solid #2d3345; color: #fff; border-radius: 6px; box-sizing: border-box; margin-bottom: 8px; font-size: 14px; }
+        .btn { display: block; width: 100%; padding: 12px; border: none; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; text-align: center; box-sizing: border-box; margin-top: 8px; font-size: 13px; text-transform: uppercase; transition: background 0.2s, transform 0.1s; }
+        .btn:active { transform: scale(0.98); }
+        .btn-accent { background: var(--accent-color); color: #000; }
+        .btn-danger { background: var(--danger-color); }
+        .btn-warn { background: var(--warning-color); color: #000; }
+        .btn-purple { background: var(--purple-color); }
+        .btn-orange { background: var(--orange-color); }
+        .btn-gray { background: #2d3345; border: 1px solid #414962; }
+        #map { height: 300px; width: 100%; border-radius: 8px; border: 1px solid #232733; margin-bottom: 10px; }
+        canvas { background-color: #090a0f; border: 1px solid #232733; border-radius: 8px; width: 100%; box-sizing: border-box; display: block; margin-bottom: 10px; }
+        .table-wrapper { overflow-x: auto; margin-top: 12px; border-radius: 6px; border: 1px solid #232733; }
+        table { width: 100%; border-collapse: collapse; background: #0f1115; font-size: 12px; text-align: left; }
+        th, td { padding: 8px 10px; border: 1px solid #232733; }
+        th { background: #16181f; color: var(--accent-color); }
+        tr:nth-child(even) { background: #13151a; }
+        .status-box { font-size: 13px; line-height: 1.5; background: #090a0f; padding: 12px; border-radius: 6px; border-left: 4px solid var(--accent-color); margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h3>🗺️ Навигационная ЖД Карта</h3>
+        <div id="map"></div>
+        
+        <h3>📈 Профиль уклонов пути (3км обзор)</h3>
+        <canvas id="profileCanvas" width="600" height="120"></canvas>
+        
+        <button class="btn btn-danger" style="padding: 15px; font-size: 14px;" onclick="activateAudio()">🔊 ВКЛЮЧИТЬ ИНФОРМАТОР СКОРОСТЕЙ И ТРА</button>
+        
+        <div id="telemetry" class="status-box">
+            Ожидание загрузки файла GeoJSON маршрута...
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>🛠️ Параметры состава и Разметка ТРА</h3>
+        <div class="grid-2">
+            <div>
+                <label>📏 Длина поезда (м):</label>
+                <input type="number" id="trainLengthInput" value="600" onchange="updateTrainLength(this.value)">
+            </div>
+            <div>
+                <label>📢 Фильтр оповещений:</label>
+                <select id="voiceNotificationFilter">
+                    <option value="all">Все объекты ТРА</option>
+                    <option value="vstavka">Только нейтральные вставки</option>
+                    <option value="speed">Только ограничения скорости</option>
+                    <option value="crossing">Только переезды</option>
+                    <option value="none">Отключить звук</option>
+                </select>
+            </div>
+        </div>
+
+        <p style="font-size: 12px; color: #888; margin: 4px 0;">Фиксация объектов ТРА головой локомотива:</p>
+        <div class="grid-3">
+            <button class="btn btn-warn" onclick="addCurrentObject('Нейтральная вставка', '#ffb703')">📌 Вставка</button>
+            <button class="btn btn-purple" onclick="addCurrentObject('Кривая менее 650м', '#9b59b6')">↪️ Кривая</button>
+            <button class="btn btn-danger" onclick="addCurrentObject('Ограничение скорости', '#e63946')">⚠️ Скорость</button>
+        </div>
+        <div class="grid-2">
+            <button class="btn btn-orange" onclick="addCurrentObject('Переезд', '#f4a261')">🚗 Переезд</button>
+            <button class="btn btn-accent" onclick="addCurrentObject('Светофор станции', '#00b4d8')">🚦 Светофор ст.</button>
+        </div>
+        <div id="log-status" style="margin-top:8px; font-size:12px; color: var(--accent-color); font-weight: bold; text-align: center;"></div>
+    </div>
+
+    <div class="card">
+        <h3>💾 Загрузка файла путей</h3>
+        <label class="btn btn-accent" style="display:block; text-align:center; color:#000; cursor: pointer;">📂 ВЫБРАТЬ ФАЙЛ ПУТЕЙ (.GEOJSON)
+            <input type="file" style="display:none;" accept="*/*" onchange="loadGeoJson(this)">
+        </label>
+        <div id="file-info" style="margin-top: 8px; font-size:12px; color:#aaa; text-align:center;">
+            Загрузите ваш файл, созданный в OSM или конструкторах карт.
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>📑 Электронный Журнал ТУ-3 (БЧ)</h2>
+        <div class="grid-2">
+            <div><label>Дата Явки</label><input type="date" id="dateYavka"></div>
+            <div><label>Время Явки</label><input type="time" id="timeYavka"></div>
+        </div>
+        <div class="grid-2">
+            <div><label>Станция Явки</label><input type="text" id="locYavka" placeholder="Минск-Сорт."></div>
+            <div><label>Направление</label><input type="text" id="routeDirection" placeholder="на Молодечно"></div>
+        </div>
+        <div class="grid-2">
+            <div><label>Станция Сдачи</label><input type="text" id="locSdacha" placeholder="Молодечно"></div>
+            <div><label>Дата Сдачи</label><input type="date" id="dateSdacha"></div>
+        </div>
+        <div><label>Время Сдачи</label><input type="time" id="timeSdacha"></div>
+        
+        <button class="btn btn-accent" onclick="processAndSaveTU3()">Рассчитать и сохранить в базу</button>
+    </div>
+
+    <div class="card" style="border-left: 4px solid var(--success-color);">
+        <h3>📊 Месячный баланс часов</h3>
+        <div id="results" style="font-size:13px; line-height:1.5;">Заполните ТУ-3 для вывода статистики.</div>
+    </div>
+
+    <div class="card">
+        <h3>🗄️ История поездок в памяти Xiaomi</h3>
+        <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Дата</th>
+                        <th>Маршрут</th>
+                        <th>Всего</th>
+                        <th>Ночь 35%</th>
+                        <th>Ночь 40%</th>
+                        <th>Удалить</th>
+                    </tr>
+                </thead>
+                <tbody id="tu3TableBody"></tbody>
+            </table>
+        </div>
+        <button class="btn btn-danger" style="padding:6px; font-size:10px; margin-top:10px;" onclick="clearTU3Database()">⚠️ Очистить историю ТУ-3</button>
+    </div>
+
+    <script>
+        // Текущие даты
+        const todayStr = new Date().toISOString().split('T')[0];
+        document.getElementById('dateYavka').value = todayStr;
+        document.getElementById('dateSdacha').value = todayStr;
+
+        // Настройка карты Leaflet
+        const map = L.map('map').setView([53.9000, 27.5600], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        let trainMarker = L.circleMarker([53.9000, 27.5600], {color: 'red', radius: 8, fillColor: '#f03', fillOpacity: 0.5}).addTo(map);
+
+        // Полотно профиля
+        const pCanvas = document.getElementById('profileCanvas'); const pCtx = pCanvas.getContext('2d');
+
+        // Переменные данных путей
+        let routeNodes = [];      // [{lat, lon, height, meterMark}]
+        let objectsDb = [];       // [{name, lat, lon, color, meterMark}]
+        let terrain = [];         // Пометровый массив высот
+
+        let trainX = 0; let trainLength = 600; let currentSpeed = 0; let currentAltitude = 150;
+        let lastLat = null; let lastLon = null; let gpsStatus = "Оффлайн";
+        let spokenObjects = {};
+
+        function updateTrainLength(val) { trainLength = parseInt(val) || 600; }
+
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const u = new SpeechSynthesisUtterance(text); u.lang = 'ru-RU'; window.speechSynthesis.speak(u);
+            }
+        }
+
+        function activateAudio() {
+            speak("Система информирования БЧ запущена. Поиск спутников.");
+            gpsStatus = "Поиск GPS...";
+            startGPSWatch();
+        }
+
+        function addCurrentObject(name, color) {
+            if (lastLat === null || lastLon === null) { alert("Нет GPS сигнала для фиксации!"); return; }
+            const obj = { name, lat: lastLat, lon: lastLon, color: color, meterMark: trainX };
+            objectsDb.push(obj);
+            
+            // Ставим маркер объекта на карту Leaflet
+            L.circleMarker([lastLat, lastLon], {color: color, radius: 6, fillColor: color, fillOpacity: 0.8})
+             .addTo(map)
+             .bindPopup(`<b>${name}</b><br>Пикетаж: ${Math.round(trainX)}м`)
+             .openPopup();
+
+            document.getElementById('log-status').innerText = `Записано: ${name} (${Math.round(trainX)} м)`;
+            speak(`${name} добавлен`);
+            setTimeout(() => { document.getElementById('log-status').innerText = ""; }, 3000);
+        }
+
+        function getDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371000; const dLat = (lat2 - lat1) * Math.PI / 180; const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        function findClosestRoutePoint(lat, lon) {
+            if (routeNodes.length === 0) return null;
+            let minDist = Infinity; let closestIdx = 0;
+            for (let i = 0; i < routeNodes.length; i++) {
+                let d = getDistance(lat, lon, routeNodes[i].lat, routeNodes[i].lon);
+                if (d < minDist) { minDist = d; closestIdx = i; }
+            }
+            return { node: routeNodes[closestIdx], dist: minDist, index: closestIdx };
+        }
+
+        function startGPSWatch() {
+            if (navigator.geolocation) {
+                navigator.geolocation.watchPosition(
+                    (p) => {
+                        let lat = p.coords.latitude; let lon = p.coords.longitude;
+                        gpsStatus = "Спутники БЧ: Активны";
+                        currentSpeed = p.coords.speed ? Math.round(p.coords.speed * 3.6) : 0;
+                        
+                        lastLat = lat; lastLon = lon;
+                        trainMarker.setLatLng([lat, lon]);
+                        map.setView([lat, lon], map.getZoom());
+
+                        let snap = findClosestRoutePoint(lat, lon);
+                        if (snap && snap.dist < 400) { 
+                            trainX = snap.node.meterMark;
+                            currentAltitude = Math.round(terrain[Math.floor(trainX)] || snap.node.height || (p.coords.altitude || 150));
+                        } else {
+                            if(p.coords.altitude) currentAltitude = Math.round(p.coords.altitude);
+                        }
+
+                        // Речевое оповещение по дистанции
+                        const filter = document.getElementById('voiceNotificationFilter').value;
+                        if (filter !== 'none') {
+                            objectsDb.forEach(obj => {
+                                let d = getDistance(lat, lon, obj.lat, obj.lon);
+                                let key = `${obj.name}_${obj.meterMark}`;
+                                if (d <= 530 && d >= 470 && !spokenObjects[key]) {
+                                    speak("Внимание! Через 500 метров " + obj.name);
+                                    spokenObjects[key] = true;
+                                }
+                            });
+                        }
+                    },
+                    (err) => { gpsStatus = "Ошибка GPS"; },
+                    { enableHighAccuracy: true, maximumAge: 0 }
+                );
+            }
+        }
+
+        function extractCoords(g) {
+            if (!g) return [];
+            if (g.type === 'LineString') return g.coordinates;
+            if (g.type === 'MultiLineString') return g.coordinates.reduce((a, c) => a.concat(c), []);
+            if (g.type === 'GeometryCollection') return g.geometries.reduce((a, g2) => a.concat(extractCoords(g2)), []);
+            return [];
+        }
+
+        // КЛАССИЧЕСКАЯ РАБОЧАЯ ЗАГРУЗКА БЕЗ СЕТЕВЫХ ЗАПРОСОВ
+        function loadGeoJson(input) {
+            const file = input.files[0]; if(!file) return;
+            document.getElementById('file-info').innerText = "⏳ Чтение файла маршрута...";
+            const r = new FileReader();
+            r.onload = function(e) {
+                try {
+                    let json = JSON.parse(e.target.result);
+                    
+                    // Отображаем слой на карте Leaflet
+                    L.geoJSON(json, {
+                        style: { color: "#00b4d8", weight: 5, opacity: 0.8 }
+                    }).addTo(map);
+
+                    let fe = json.features ? json.features : (Array.isArray(json) ? json : [json]);
+                    let raw = [];
+                    fe.forEach(f => { raw = raw.concat(extractCoords(f.geometry || f)); });
+                    let valid = raw.filter(pt => Array.isArray(pt) && pt.length >= 2);
+
+                    if(valid.length === 0) {
+                        document.getElementById('file-info').innerText = "❌ Линии путей не обнаружены.";
+                        return;
+                    }
+
+                    routeNodes = []; terrain = [];
+                    let totalM = 0;
+
+                    for(let i=0; i<valid.length; i++) {
+                        let lon = valid[i][0];
+                        let lat = valid[i][1];
+                        // Если в файле заложены 3D координаты высоты — берем их, иначе ставим 150м по умолчанию
+                        let h = valid[i].length >= 3 ? valid[i][2] : 150; 
+
+                        if (i > 0) {
+                            totalM += getDistance(valid[i-1][1], valid[i-1][0], lat, lon);
+                        }
+                        routeNodes.push({ lat, lon, height: h, meterMark: totalM });
+                    }
+
+                    // Заполняем пометровый массив для плавности графика
+                    let currentIdx = 0;
+                    for (let m = 0; m <= totalM; m++) {
+                        while (currentIdx < routeNodes.length - 1 && routeNodes[currentIdx + 1].meterMark < m) {
+                            currentIdx++;
+                        }
+                        let p1 = routeNodes[currentIdx];
+                        let p2 = routeNodes[currentIdx + 1] || p1;
+                        if (p2.meterMark !== p1.meterMark) {
+                            let ratio = (m - p1.meterMark) / (p2.meterMark - p1.meterMark);
+                            terrain.push(p1.height + ratio * (p2.height - p1.height));
+                        } else {
+                            terrain.push(p1.height);
+                        }
+                    }
+
+                    // Центрируем карту по первому маркеру трека
+                    if(routeNodes.length > 0) {
+                        map.setView([routeNodes[0].lat, routeNodes[0].lon], 13);
+                    }
+
+                    document.getElementById('file-info').innerHTML = `<span style="color:var(--success-color)">✔️ Файл успешно определен! Длина линии: ${(totalM/1000).toFixed(1)} км.</span>`;
+                    speak("Маршрут успешно загружен в бортовой комплекс.");
+                } catch(err) {
+                    document.getElementById('file-info').innerText = "❌ Ошибка разбора формата GeoJSON.";
+                }
+            };
+            r.readAsText(file);
+        }
+
+        // ЖУРНАЛ ТУ-3
+        function processAndSaveTU3() {
+            const dY = document.getElementById('dateYavka').value; const tY = document.getElementById('timeYavka').value;
+            const lY = document.getElementById('locYavka').value || "Минск"; const dir = document.getElementById('routeDirection').value || "Молодечно";
+            const lS = document.getElementById('locSdacha').value || "Молодечно";
+            const dS = document.getElementById('dateSdacha').value; const tS = document.getElementById('timeSdacha').value;
+
+            if(!tY || !tS) { alert("Заполните временные отметки рейса!"); return; }
+            const start = new Date(`${dY}T${tY}`); const end = new Date(`${dS}T${tS}`);
+            if(end <= start) { alert("Неверно заполнено время явки/сдачи!"); return; }
+
+            let totalMin = Math.round((end - start) / 60000);
+            let nightMin = 0; let iter = new Date(start);
+            while(iter < end) {
+                let h = iter.getHours(); if(h >= 22 || h < 6) nightMin++;
+                iter.setMinutes(iter.getMinutes() + 1);
+            }
+            let n35 = 0, n40 = 0;
+            if(nightMin > 0) { if((nightMin / totalMin) >= 0.5) n40 = nightMin; else n35 = nightMin; }
+
+            let db = JSON.parse(localStorage.getItem('tu3_stable_db') || '[]');
+            db.push({ id: Date.now(), dateYavka: dY, route: `${lY}➔${dir}➔${lS}`, total: totalMin, n35, n40 });
+            localStorage.setItem('tu3_stable_db', JSON.stringify(db));
+            renderTU3Data();
+        }
+
+        const fmt = m => `${Math.floor(m/60)}ч ${m%60}м`;
+
+        function renderTU3Data() {
+            let db = JSON.parse(localStorage.getItem('tu3_stable_db') || '[]');
+            let tbody = document.getElementById('tu3TableBody'); tbody.innerHTML = '';
+            let currentMonth = new Date().toISOString().substring(0,7);
+            let mTotal = 0;
+
+            db.sort((a,b)=>b.id-a.id).forEach(r => {
+                if(r.dateYavka && r.dateYavka.startsWith(currentMonth)) mTotal += r.total;
+                tbody.innerHTML += `<tr>
+                    <td>${r.dateYavka}</td><td>${r.route}</td><td><b>${fmt(r.total)}</b></td>
+                    <td style="color:var(--warning-color)">${r.n35?fmt(r.n35):'-'}</td><td style="color:var(--danger-color)">${r.n40?fmt(r.n40):'-'}</td>
+                    <td><button style="background:none;border:0;color:red;cursor:pointer;" onclick="deleteTU3(${r.id})">❌</button></td>
+                </tr>`;
+            });
+            
+            if(db.length > 0) {
+                document.getElementById('results').innerHTML = `🎯 <b>В текущем месяце (${currentMonth}):</b> Накатанный баланс: <span style="color:var(--accent-color);font-size:15px;font-weight:bold;">${fmt(mTotal)}</span>`;
+            } else {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#555;">Журнал ТУ-3 пуст</td></tr>`;
+            }
+        }
+        function deleteTU3(id) { let db = JSON.parse(localStorage.getItem('tu3_stable_db') || '[]'); db=db.filter(r=>r.id!==id); localStorage.setItem('tu3_stable_db',JSON.stringify(db)); renderTU3Data(); }
+        function clearTU3Database() { if(confirm("Очистить журнал?")) { localStorage.removeItem('tu3_stable_db'); renderTU3Data(); } }
+
+        // ЦИКЛ ОТРИСОВКИ ПРОФИЛЯ НА ХОЛСТЕ CANVAS
+        function draw() {
+            pCtx.clearRect(0, 0, pCanvas.width, pCanvas.height);
+            if(terrain.length === 0) {
+                pCtx.fillStyle = "#555"; pCtx.font = "12px sans-serif";
+                pCtx.fillText("Профиль пути отобразится после загрузки GeoJSON", 20, 60);
+                requestAnimationFrame(draw);
+                return;
+            }
+
+            let viewMeters = 3000; let scale = viewMeters / pCanvas.width;
+            let offset = trainX - (viewMeters / 2);
+
+            const getH = (m) => terrain[Math.floor(m)] || 150;
+            const getScreenY = (m) => pCanvas.height - (getH(m) - 100) * 1.5 - 20;
+
+            // Вертикальные сетки
+            pCtx.beginPath(); pCtx.strokeStyle = "#222530"; pCtx.lineWidth = 1;
+            for(let i=0; i<pCanvas.width; i+=50) { pCtx.moveTo(i, 0); pCtx.lineTo(i, pCanvas.height); } pCtx.stroke();
+
+            // Линия рельефа пути
+            pCtx.beginPath(); pCtx.strokeStyle = "#414962"; pCtx.lineWidth = 3;
+            for(let x=0; x<pCanvas.width; x++) {
+                let m = x * scale + offset;
+                if(x===0) pCtx.moveTo(x, getScreenY(m)); else pCtx.lineTo(x, getScreenY(m));
+            }
+            pCtx.stroke();
+
+            // Отрисовка состава локомотива
+            let headX = (trainX - offset)/scale; let headY = getScreenY(trainX);
+            let tailX = (trainX - trainLength - offset)/scale;
+            pCtx.beginPath(); pCtx.strokeStyle = "rgba(0, 180, 216, 0.5)"; pCtx.lineWidth = 8;
+            pCtx.moveTo(tailX, getScreenY(trainX - trainLength) - 4); pCtx.lineTo(headX, headY - 4); pCtx.stroke();
+
+            pCtx.fillStyle = "#e63946"; pCtx.beginPath(); pCtx.arc(headX, headY - 4, 5, 0, Math.PI*2); pCtx.fill();
+
+            // Значки объектов ТРА на профиле
+            objectsDb.forEach(obj => {
+                let sX = (obj.meterMark - offset)/scale;
+                if(sX >= 0 && sX <= pCanvas.width) {
+                    let sY = getScreenY(obj.meterMark);
+                    pCtx.fillStyle = obj.color; pCtx.fillRect(sX - 1, sY - 30, 2, 30);
+                    pCtx.beginPath(); pCtx.arc(sX, sY - 30, 4, 0, Math.PI*2); pCtx.fill();
+                }
+            });
+
+            // Телеметрия под графиком
+            document.getElementById('telemetry').innerHTML = `
+                🛰️ <b>Мониторинг БЧ:</b> ${gpsStatus}<br>
+                🚂 <b>Скорость:</b> <span style="color:var(--accent-color); font-size:20px; font-weight:bold;">${currentSpeed} км/ч</span> | ⛰️ <b>Высота по GPS:</b> ${currentAltitude} м.<br>
+                📍 <b>Локальный пикетаж состава:</b> ${Math.round(trainX)} м.
+            `;
+
+            requestAnimationFrame(draw);
+        }
+
+        window.onload = function() { renderTU3Data(); draw(); };
+    </script>
+</body>
+</html>
