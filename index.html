@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Путевой Инженер — Машинист</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+    <style>
+        :root { --bg: #0a0b0f; --card: #12141b; --accent: #00b4d8; }
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: #e0e0e0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .header { background: #0f1117; padding: 12px; text-align: center; font-size: 18px; font-weight: bold; border-bottom: 1px solid #1f2330; }
+        .section { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+        .card { background: var(--card); border-radius: 12px; margin: 8px; padding: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.6); }
+        #map { flex: 1.4; border-radius: 12px; margin: 8px; }
+        #elevation-container { flex: 1.1; position: relative; }
+        #elevationChart { width: 100% !important; height: 100% !important; }
+        #train-on-profile { position: absolute; font-size: 32px; transition: left 1s ease; filter: drop-shadow(0 0 10px #ff4444); z-index: 10; }
+        
+        .controls { background: #0f1117; padding: 12px; border-top: 1px solid #1f2330; }
+        .btn { padding: 14px; margin: 6px 0; border: none; border-radius: 8px; font-weight: bold; font-size: 15px; width: 100%; cursor: pointer; }
+        .btn-primary { background: var(--accent); color: black; }
+        .btn-danger { background: #e63946; }
+        .status { font-size: 14px; padding: 10px; background: #1a1d27; border-radius: 8px; margin-top: 8px; }
+        .log { font-size: 13px; max-height: 110px; overflow-y: auto; margin-top: 8px; }
+    </style>
+</head>
+<body>
+
+    <div class="header">🚂 Путевой Инженер — Машинист</div>
+
+    <!-- 1. ПРОФИЛЬ РЕЛЬЕФА -->
+    <div class="section card" id="elevation-container">
+        <h3>📈 Профиль пути</h3>
+        <canvas id="elevationChart"></canvas>
+        <div id="train-on-profile">🚂</div>
+    </div>
+
+    <!-- 2. КАРТА -->
+    <div class="section">
+        <div id="map"></div>
+    </div>
+
+    <!-- 3. УПРАВЛЕНИЕ -->
+    <div class="controls">
+        <button class="btn btn-primary" onclick="startTrip()">▶️ Начать поездку</button>
+        <button class="btn" onclick="openRouteSettings()">⚙️ Настроить маршрут</button>
+        
+        <div class="status" id="telemetry">Ожидание GPS...</div>
+        <div class="log" id="voice-log"></div>
+    </div>
+
+<script>
+// ==================== ГЛОБАЛЬНЫЕ ====================
+const map = L.map('map', {zoomControl: false}).setView([53.9000, 27.5600], 13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+let trainMarker = L.marker([53.9000, 27.5600], {
+    icon: L.divIcon({className: '', html: '🚂', iconSize: [34, 34]})
+}).addTo(map);
+
+let elevationChart = null;
+let routePoints = [];
+let routeElevations = [];
+let traObjects = [];           // Все объекты ТРА
+let trainX = 0;
+let isTripActive = false;
+
+// ==================== ПРОФИЛЬ ====================
+function initElevationChart() {
+    const ctx = document.getElementById('elevationChart');
+    if (elevationChart) elevationChart.destroy();
+
+    elevationChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: routeElevations.map(p => (p.meterMark/1000).toFixed(1)),
+            datasets: [{ 
+                data: routeElevations.map(p => p.elevation),
+                borderColor: '#00ddff', borderWidth: 3, tension: 0.3, fill: true
+            }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }}}
+    });
+}
+
+function updateTrainOnProfile() {
+    if (!routeElevations.length) return;
+    const max = routeElevations[routeElevations.length-1].meterMark;
+    const progress = Math.min(0.96, trainX / max);
+    document.getElementById('train-on-profile').style.left = `${5 + progress * 90}%`;
+}
+
+// ==================== ГОЛОСОВЫЕ ПРЕДУПРЕЖДЕНИЯ ====================
+const spokenCache = new Map();
+
+function speak(text) {
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'ru-RU';
+        u.rate = 1.05;
+        u.pitch = 1.08;           // более женский оттенок
+        window.speechSynthesis.speak(u);
+    }
+    
+    // Лог предупреждений
+    const log = document.getElementById('voice-log');
+    log.innerHTML += `<div style="color:#00ddff">→ ${text}</div>`;
+    log.scrollTop = log.scrollHeight;
+}
+
+function checkVoiceWarnings() {
+    if (!isTripActive) return;
+
+    traObjects.forEach(obj => {
+        const distance = Math.abs(obj.meterMark - trainX);
+        
+        if (distance < 650 && distance > 550 && !spokenCache.has(obj.id + '_approach')) {
+            let message = "";
+            
+            switch(obj.type) {
+                case 'speed_limit':
+                    message = `Внимание! Через 600 метров ограничение скорости ${obj.value} км/ч`;
+                    break;
+                case 'curve':
+                    message = `Впереди кривая ${obj.value} метров. Сбавьте скорость`;
+                    break;
+                case 'neutral':
+                    message = `Через 600 метров нейтральная вставка`;
+                    break;
+                case 'station':
+                    message = `Приближаемся к станции ${obj.name}`;
+                    break;
+            }
+            
+            if (message) {
+                speak(message);
+                spokenCache.set(obj.id + '_approach', true);
+            }
+        }
+    });
+}
+
+// ==================== GPS ====================
+function startGPSTracking() {
+    navigator.geolocation.watchPosition(pos => {
+        const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+        trainMarker.setLatLng(latlng);
+        map.setView(latlng, map.getZoom());
+
+        if (routePoints.length > 0) {
+            trainX = getProjectedMeter(latlng);
+            updateTrainOnProfile();
+            updateTelemetry();
+            checkVoiceWarnings();
+        }
+    }, err => console.error(err), { enableHighAccuracy: true, maximumAge: 800 });
+}
+
+function getProjectedMeter(latlng) {
+    let best = routePoints[0];
+    let minDist = Infinity;
+    routePoints.forEach(p => {
+        const d = latlng.distanceTo(L.latLng(p.lat, p.lon));
+        if (d < minDist) { minDist = d; best = p; }
+    });
+    return best.meterMark;
+}
+
+// ==================== ТЕЛЕМЕТРИЯ ====================
+function updateTelemetry() {
+    document.getElementById('telemetry').innerHTML = `
+        Пикет: <b>${Math.round(trainX)} м</b><br>
+        Активно: ${isTripActive ? '✅' : '❌'}
+    `;
+}
+
+// ==================== ЗАПУСК ====================
+function startTrip() {
+    isTripActive = true;
+    speak("Поездка начата. Голосовые предупреждения включены.");
+    startGPSTracking();
+}
+
+function openRouteSettings() {
+    const trainLength = prompt("Длина поезда (вагоны):", "48");
+    const defaultSpeed = prompt("Основное ограничение скорости (км/ч):", "70");
+    
+    // Пример объектов
+    traObjects = [
+        {id:1, type:'speed_limit', meterMark: 5200, value: 60},
+        {id:2, type:'curve', meterMark: 12400, value: 520},
+        {id:3, type:'neutral', meterMark: 18900},
+        {id:4, type:'station', name:'Молодечно', meterMark: 28500}
+    ];
+    
+    speak(`Маршрут настроен. Длина поезда ${trainLength} вагонов.`);
+}
+
+// Инициализация
+setTimeout(() => {
+    speak("Приложение готово. Нажмите «Начать поездку»");
+}, 1000);
+</script>
+</body>
+</html>
