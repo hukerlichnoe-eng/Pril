@@ -3,6 +3,10 @@ name: Сборка ЖД Комплекса APK v15.0
 on:
   push:
     branches: [ main, master ]
+  workflow_dispatch: # Позволяет запустить сборку вручную кнопкой!
+
+permissions:
+  contents: write # Даем роботы полные права на создание файлов manifest
 
 jobs:
   build:
@@ -28,20 +32,15 @@ jobs:
 
     - name: Подготовка окружения и генерация конфигурации
       run: |
-        # Создаем пустой manifest.json, если его вдруг нет в корне
         if [ ! -f manifest.json ]; then
           echo '{"name":"Бортовой Комплекс БЧ","short_name":"БК БЧ","start_url":"/index.html","display":"standalone","background_color":"#0d0e12","theme_color":"#16181f","orientation":"portrait","icons":[{"src":"https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png","sizes":"512x512","type":"image/png"}]}' > manifest.json
         fi
 
-        # Принудительно создаем готовый twa-manifest.json, чтобы Bubblewrap не задавал вопросы в консоли
         echo '{"packageId":"com.bch.railwayapp","host":"localhost","name":"Бортовой Комплекс БЧ","short_name":"БК БЧ","themeColor":"#16181f","navigationColor":"#0d0e12","backgroundColor":"#0d0e12","startUrl":"/index.html","iconUrl":"https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png","maskableIconUrl":"https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png","clockwiseColors":false,"features":{"backgroundLocation":true},"alphaDependencies":true,"display":"standalone","orientation":"portrait","scionEnabled":false,"shortcuts":[],"splashScreenFadeOutDuration":300,"webManifestUrl":"https://localhost/manifest.json","fallbackType":"customtabs","editorVersion":1}' > twa-manifest.json
 
     - name: Компиляция нативного Android проекта
       run: |
-        # Запуск генерации проекта без интерактивных вопросов
         bubblewrap update --meta=twa-manifest.json || bubblewrap generate --meta=twa-manifest.json --skipKeygen
-        
-        # Финальная сборка APK
         bubblewrap build --skipKeygen || true
 
     - name: Выгрузка готового APK в артефакты
