@@ -1,0 +1,44 @@
+name: Сборка ЖД Комплекса APK (v15.0)
+
+on:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Проверка репозитория
+      uses: actions/checkout@v4
+
+    - name: Установка Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 18
+
+    - name: Установка Bubblewrap CLI
+      run: npm install -g @bubblewrap/cli
+
+    - name: Установка Java (JDK)
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'zulu'
+        java-version: '11'
+
+    - name: Инициализация и Сборка проекта Bubblewrap
+      run: |
+        # Автоматическое создание конфигурации TWA с инъекцией фонового GPS
+        bubblewrap init --manifest=manifest.json --meta=twa-manifest.json --directory=./build-twa --meta-output=twa-manifest.json || true
+        
+        # Внедряем нативные разрешения Android напрямую в конфигурацию сборки
+        echo '{"features": {"backgroundLocation": true}, "alphaDependencies": true}' >> twa-manifest.json
+        
+        # Генерация Android проекта и компиляция в APK
+        bubblewrap build --manifest=twa-manifest.json
+        
+    - name: Сохранение Готового APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: Railway_BCH_v15_App
+        path: ./*.apk
