@@ -1,4 +1,4 @@
-name: Сборка Бортового Помощника БЧ v15.0
+name: Сборка ЖД Комплекса APK v15.0
 
 on:
   push:
@@ -28,17 +28,12 @@ jobs:
 
     - name: Сборка Android проекта и инъекция прав
       run: |
-        # Инициализируем проект на основе вашего manifest.json
         bubblewrap init --manifest=manifest.json --meta=twa-manifest.json --directory=./build-twa --meta-output=twa-manifest.json || true
-        
-        # Инжектируем разрешение на работу со спутниками при заблокированном экране
         echo '{"features": {"backgroundLocation": true}, "alphaDependencies": true}' >> twa-manifest.json
-        
-        # Компилируем чистый APK
         bubblewrap build --manifest=twa-manifest.json
         
     - name: Выгрузка готового APK в артефакты
       uses: actions/upload-artifact@v4
       with:
-        name: BORT_POMOSH_BCH_v15
+        name: Railway_BCH_v15_App
         path: ./*.apk
