@@ -17,22 +17,8 @@ jobs:
       with:
         node-version: 20
 
-    - name: Установка инструментов компиляции
+    - name: Установка Cordova
       run: npm install -g cordova
-
-    - name: Создание нативного Android каркаса
-      run: |
-        cordova create android-build com.bch.helper "Бортовой Помощник"
-        cd android-build
-        cordova platform add android --noscript
-        
-        # Переносим файлы интерфейса v15 в сборщик
-        rm -rf www/*
-        cp ../index.html www/
-        cp ../manifest.json www/ || true
-        
-        # Настройка разрешений высокой точности GPS (Геолокация БЧ)
-        echo '<widget id="com.bch.helper"><plugin name="cordova-plugin-geolocation" spec="^5.0.0"><variable name="GPS_REQUIRED" value="true" /></plugin></widget>' > config.xml
 
     - name: Настройка Java для Android SDK
       uses: actions/setup-java@v4
@@ -40,16 +26,36 @@ jobs:
         distribution: 'zulu'
         java-version: '17'
 
+    - name: Создание нативного Android каркаса
+      run: |
+        # Создаем чистый проект без конфликтов конфигурации
+        cordova create android-build com.bch.helper "BCH_Helper"
+        cd android-build
+        cordova platform add android --noscript
+        
+        # Переносим файлы интерфейса v15 в рабочую директорию сборщика
+        rm -rf www/*
+        cp ../index.html www/
+        cp ../manifest.json www/ || true
+
+    - name: Прямая инъекция прав GPS в AndroidManifest
+      run: |
+        cd android-build/platforms/android/app/src/main
+        
+        # Добавляем стандартные разрешения Android для спутников прямо в XML
+        sed -i '/<\/manifest>/i \    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />' AndroidManifest.xml
+
     - name: Финальная компиляция APK файла
       run: |
         cd android-build
-        cordova build android --device --release || cordova build android --device
+        # Собираем дебаг-версию (она компилируется без требования цифровой подписи)
+        cordova build android --device --debug
         
-        # Вытаскиваем готовый APK в корень для отправки
-        cp platform/android/app/build/outputs/apk/release/*.apk ../помощник_бч_v15.apk || cp platforms/android/app/build/outputs/apk/debug/*.apk ../помощник_бч_v15.apk || true
+        # Переносим готовый файл в корень
+        cp platforms/android/app/build/outputs/apk/debug/app-debug.apk ../помощник_бч_v15.apk
 
     - name: Отправка готового APK в Артефакты GitHub
       uses: actions/upload-artifact@v4
       with:
         name: Приложение_БЧ_v15_Вагоны_ТРА
-        path: ./*.apk
+        path: ./помощник_бч_v15.apk
