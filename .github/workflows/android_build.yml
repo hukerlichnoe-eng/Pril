@@ -1,52 +1,55 @@
-name: Сборка ЖД Комплекса APK v15.0
+name: Генерация Бортового Комплекса APK
 
 on:
   push:
     branches: [ main, master ]
-  workflow_dispatch: # Позволяет запустить сборку вручную кнопкой!
-
-permissions:
-  contents: write # Даем роботы полные права на создание файлов manifest
+  workflow_dispatch:
 
 jobs:
-  build:
+  android-apk:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Проверка репозитория
+    - name: Инициализация репозитория
       uses: actions/checkout@v4
 
-    - name: Установка Node.js
+    - name: Настройка Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: 18
+        node-version: 20
 
-    - name: Установка Bubblewrap CLI
-      run: npm install -g @bubblewrap/cli
+    - name: Установка инструментов компиляции
+      run: npm install -g cordova
 
-    - name: Установка Java (JDK)
-      uses: actions/setup-java@v3
+    - name: Создание нативного Android каркаса
+      run: |
+        cordova create android-build com.bch.helper "Бортовой Помощник"
+        cd android-build
+        cordova platform add android --noscript
+        
+        # Переносим файлы интерфейса v15 в сборщик
+        rm -rf www/*
+        cp ../index.html www/
+        cp ../manifest.json www/ || true
+        
+        # Настройка разрешений высокой точности GPS (Геолокация БЧ)
+        echo '<widget id="com.bch.helper"><plugin name="cordova-plugin-geolocation" spec="^5.0.0"><variable name="GPS_REQUIRED" value="true" /></plugin></widget>' > config.xml
+
+    - name: Настройка Java для Android SDK
+      uses: actions/setup-java@v4
       with:
         distribution: 'zulu'
-        java-version: '11'
+        java-version: '17'
 
-    - name: Подготовка окружения и генерация конфигурации
+    - name: Финальная компиляция APK файла
       run: |
-        if [ ! -f manifest.json ]; then
-          echo '{"name":"Бортовой Комплекс БЧ","short_name":"БК БЧ","start_url":"/index.html","display":"standalone","background_color":"#0d0e12","theme_color":"#16181f","orientation":"portrait","icons":[{"src":"https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png","sizes":"512x512","type":"image/png"}]}' > manifest.json
-        fi
+        cd android-build
+        cordova build android --device --release || cordova build android --device
+        
+        # Вытаскиваем готовый APK в корень для отправки
+        cp platform/android/app/build/outputs/apk/release/*.apk ../помощник_бч_v15.apk || cp platforms/android/app/build/outputs/apk/debug/*.apk ../помощник_бч_v15.apk || true
 
-        echo '{"packageId":"com.bch.railwayapp","host":"localhost","name":"Бортовой Комплекс БЧ","short_name":"БК БЧ","themeColor":"#16181f","navigationColor":"#0d0e12","backgroundColor":"#0d0e12","startUrl":"/index.html","iconUrl":"https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png","maskableIconUrl":"https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png","clockwiseColors":false,"features":{"backgroundLocation":true},"alphaDependencies":true,"display":"standalone","orientation":"portrait","scionEnabled":false,"shortcuts":[],"splashScreenFadeOutDuration":300,"webManifestUrl":"https://localhost/manifest.json","fallbackType":"customtabs","editorVersion":1}' > twa-manifest.json
-
-    - name: Компиляция нативного Android проекта
-      run: |
-        bubblewrap update --meta=twa-manifest.json || bubblewrap generate --meta=twa-manifest.json --skipKeygen
-        bubblewrap build --skipKeygen || true
-
-    - name: Выгрузка готового APK в артефакты
+    - name: Отправка готового APK в Артефакты GitHub
       uses: actions/upload-artifact@v4
       with:
-        name: Railway_BCH_v15_App
-        path: |
-          ./*.apk
-          ./build-twa/**/*.apk
+        name: Приложение_БЧ_v15_Вагоны_ТРА
+        path: ./*.apk
