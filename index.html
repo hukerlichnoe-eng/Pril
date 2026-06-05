@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Бортовой Помощник БЧ v15.6 (Максимум GPS)</title>
+    <style>
+        .leaflet-container{overflow:hidden;width:100%;height:100%;position:relative;background:#efede4;font:12px/1.5 "Helvetica Neue",Arial,Helvetica,sans-serif}
+        .leaflet-pane,.leaflet-tile-layer{position:absolute;left:0;top:0}
+        .leaflet-pane{z-index:400}
+        .leaflet-tile{position:absolute;pointer-events:none}
+        
+        :root {
+            --bg-color: #f4f5f7;
+            --card-bg: #ffffff;
+            --accent-color: #0077b6;
+            --text-color: #1d2129;
+            --success-color: #2a9d8f;
+            --danger-color: #e63946;
+            --warning-color: #ff9f1c;
+            --orange-color: #f4a261;
+        }
+        body { 
+            margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg-color); color: var(--text-color); padding: 10px; box-sizing: border-box;
+        }
+        .card { 
+            background: var(--card-bg); padding: 12px; border-radius: 8px; margin-bottom: 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); border: 1px solid #dcdfe6;
+        }
+        h3 { margin-top: 0; color: var(--accent-color); border-bottom: 1px solid #dcdfe6; padding-bottom: 4px; font-size: 15px; text-transform: uppercase; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+        label { font-size: 11px; display: block; margin-bottom: 3px; color: #606266; font-weight: bold; }
+        input, select { width: 100%; padding: 8px; background: #ffffff; border: 1px solid #dcdfe6; color: var(--text-color); border-radius: 6px; box-sizing: border-box; margin-bottom: 6px; font-size: 13px; }
+        .btn { display: block; width: 100%; padding: 10px; border: none; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; text-align: center; box-sizing: border-box; font-size: 12px; text-transform: uppercase; margin-top: 4px; }
+        .btn-accent { background: var(--accent-color); color: #fff; }
+        .btn-danger { background: var(--danger-color); color: #fff; }
+        .btn-warn { background: var(--warning-color); color: #fff; }
+        .btn-orange { background: var(--orange-color); color: #fff; }
+        #map { height: 260px; width: 100%; border-radius: 6px; border: 1px solid #dcdfe6; margin-bottom: 8px; }
+        canvas { background-color: #fdfdfd; border: 1px solid #dcdfe6; border-radius: 6px; width: 100%; display: block; margin-bottom: 8px; }
+        .status-box { font-size: 12px; line-height: 1.4; background: #fdfdfd; padding: 10px; border-radius: 6px; border: 1px solid #dcdfe6; border-left: 4px solid var(--accent-color); }
+        .cb-group { background: #f9fafc; padding: 8px; border-radius: 6px; margin-bottom: 8px; border: 1px solid #dcdfe6; }
+        .cb-item { display: flex; align-items: center; margin-bottom: 4px; font-size: 12px; }
+        .cb-item input { width: auto; margin-right: 8px; margin-bottom: 0; }
+        .table-view { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 6px; }
+        .table-view th, .table-view td { border: 1px solid #dcdfe6; padding: 6px; text-align: left; }
+        .table-view th { background: #f5f7fa; color: var(--accent-color); }
+        .sys-badge { display: inline-block; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-right: 4px; }
+        .badge-ok { background: #2a9d8f; color: #fff; }
+        .badge-err { background: #e63946; color: #fff; }    </style>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+<body>
+
+    <div class="card" style="background: var(--card-bg); border-left: 4px solid var(--warning-color);">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size:12px; font-weight:bold;">️ Фоновые службы:</span>
+            <div>
+                <span id="wakeLockBadge" class="sys-badge badge-err">Экран: Сон</span>
+                <span id="gpsHeartbeatBadge" class="sys-badge badge-err">GPS: Ожидание</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card" style="border: 1px solid var(--warning-color);">
+        <h3 style="color: var(--warning-color);">📐 Настройка отсчета километров (Пикетаж БЧ)</h3>
+        <div class="grid-3">
+            <div>
+                <label>Стартовый КМ:</label>
+                <input type="number" id="startKmInput" value="827" onchange="updateKilometerSettings()">
+            </div>
+            <div>
+                <label>Стартовый ПК:</label>
+                <input type="number" id="startPkInput" value="8" min="1" max="10" onchange="updateKilometerSettings()">
+            </div>
+            <div>
+                <label>Ход пикетажа:</label>
+                <select id="kmDirectionSelect" onchange="updateKilometerSettings()">
+                    <option value="up" selected>На увеличение (+)</option>
+                    <option value="down">На убывание (-)</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3>🗺️ Навигация и Профиль пути (v15.6 - Стриминг GPS)</h3>
+        <div id="map"></div>
+        
+        <button class="btn btn-accent" style="margin-bottom: 10px; padding: 12px; font-size: 13px;" onclick="centerMapOnTrainHead()">🎯 Вернуться к голове</button>
+        
+        <div style="background: #f9fafc; padding: 8px; border-radius: 6px; border: 1px dashed var(--accent-color); margin-bottom: 8px;">
+            <label style="color: var(--accent-color);">🕒 Прокрутка координат / Коррекция наката:</label>
+            <div class="grid-2">
+                <input type="number" id="manualMeterInput" value="0" oninput="handleManualScroll(this.value)">
+                <input type="range" id="manualMeterSlider" min="0" max="10000" value="0" oninput="handleManualScroll(this.value)">
+            </div>
+        </div>
+        <label>📈 Рельефный поезд-червяк (В центре, обзор 3км):</label>
+        <canvas id="profileCanvas" width="600" height="140"></canvas>
+        
+        <div class="grid-2">
+            <button class="btn btn-danger" style="padding: 14px; font-size: 13px;" onclick="activateAudio()">🔊 ВКЛЮЧИТЬ ИНФОРМАТОР</button>
+            <button class="btn btn-warn" style="padding: 14px; font-size: 13px;" onclick="toggleReverse()">🔄 РЕВЕРС НАПРАВЛЕНИЯ</button>
+        </div>
+        
+        <button class="btn btn-success" style="padding: 12px; font-size: 13px; margin-top: 8px;" onclick="testAudio()">🔍 ПРОВЕРИТЬ ЗВУК</button>
+        
+        <div id="telemetry" class="status-box" style="margin-top: 8px;">
+            Ожидание запуска информатора...
+        </div>
+    </div>
+
+    <!-- НОВАЯ КАРТОЧКА ДЛЯ ЗАГРУЗКИ АУДИО -->
+    <div class="card" style="border: 1px solid var(--success-color);">
+        <h3 style="color: var(--success-color);"> Загрузка аудио файлов</h3>
+        <p style="font-size: 11px; color: #606266; margin-bottom: 8px;">Загрузите MP3 файлы для каждого типа объекта:</p>
+        
+        <div class="grid-2">
+            <div>
+                <label>📌 Вставка:</label>
+                <label class="btn btn-accent" style="display:block; text-align:center; cursor: pointer; font-size: 11px;">
+                    ВЫБРАТЬ ФАЙЛ
+                    <input type="file" accept="audio/*" style="display:none;" onchange="loadAudioFile('vstavka', this)">
+                </label>
+                <div id="audioStatus_vstavka" style="font-size: 10px; color: #606266; margin-top: 4px;">Не загружен</div>
+            </div>
+            <div>
+                <label>️ Скорость:</label>
+                <label class="btn btn-accent" style="display:block; text-align:center; cursor: pointer; font-size: 11px;">
+                    ВЫБРАТЬ ФАЙЛ
+                    <input type="file" accept="audio/*" style="display:none;" onchange="loadAudioFile('speed', this)">
+                </label>
+                <div id="audioStatus_speed" style="font-size: 10px; color: #606266; margin-top: 4px;">Не загружен</div>
+            </div>
+            <div>
+                <label> Светофор:</label>
+                <label class="btn btn-accent" style="display:block; text-align:center; cursor: pointer; font-size: 11px;">
+                    ВЫБРАТЬ ФАЙЛ
+                    <input type="file" accept="audio/*" style="display:none;" onchange="loadAudioFile('signal', this)">
+                </label>
+                <div id="audioStatus_signal" style="font-size: 10px; color: #606266; margin-top: 4px;">Не загружен</div>
+            </div>
+            <div>
+                <label>🚗 Переезд:</label>
+                <label class="btn btn-accent" style="display:block; text-align:center; cursor: pointer; font-size: 11px;">
+                    ВЫБРАТЬ ФАЙЛ
+                    <input type="file" accept="audio/*" style="display:none;" onchange="loadAudioFile('crossing', this)">                </label>
+                <div id="audioStatus_crossing" style="font-size: 10px; color: #606266; margin-top: 4px;">Не загружен</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card" style="border: 1px solid var(--accent-color);">
+        <h3 style="color: var(--accent-color);"> Конструктор базы объектов ТРА</h3>
+        
+        <label>📢 Выберите типы объектов для информирования:</label>
+        <div class="cb-group">
+            <div class="cb-item"><input type="checkbox" id="voice_vstavka" checked> 📌 Нейтральные вставки</div>
+            <div class="cb-item"><input type="checkbox" id="voice_speed" checked> ️ Ограничения скорости</div>
+            <div class="cb-item"><input type="checkbox" id="voice_signal" checked> 🚦 Светофоры станций</div>
+            <div class="cb-item"><input type="checkbox" id="voice_crossing" checked> 🚗 Переезды</div>
+        </div>
+
+        <div style="background: #f9fafc; padding: 8px; border-radius: 6px; border: 1px solid #dcdfe6; margin-bottom: 8px;">
+            <label style="color: var(--success-color);">🚃 Длина состава (в вагонах, 1 вагон = 14м):</label>
+            <div class="grid-2">
+                <input type="number" id="trainCarsInput" value="43" min="1" max="150" oninput="updateTrainLength(this.value)">
+                <input type="range" id="trainCarsSlider" value="43" min="1" max="150" oninput="updateTrainLength(this.value)">
+            </div>
+            <div id="calculatedLengthText" style="font-size: 11px; color: #606266; text-align: right; margin-top: -2px;">Расчетная длина: 602 м</div>
+        </div>
+
+        <div style="background: var(--card-bg); padding: 10px; border-radius: 6px; border: 1px solid var(--accent-color); margin-top: 10px; margin-bottom: 12px;">
+            <span style="font-size: 12px; font-weight: bold; color: var(--accent-color); display:block; margin-bottom:8px;">➕ Ручное добавление объекта по КМ и ПК:</span>
+            <div class="grid-3">
+                <div>
+                    <label>Название/Текст:</label>
+                    <input type="text" id="manualObjName" placeholder="Вставка">
+                </div>
+                <div>
+                    <label>Целевой КМ:</label>
+                    <input type="number" id="manualObjKm" value="830">
+                </div>
+                <div>
+                    <label>Целевой ПК:</label>
+                    <input type="number" id="manualObjPk" value="1" min="1" max="10">
+                </div>
+            </div>
+            <label>Тип маркера (для фильтра звука):</label>
+            <select id="manualObjType">
+                <option value="vstavka">📌 Нейтральная вставка</option>
+                <option value="speed">⚠️ Ограничение скорости</option>
+                <option value="signal">🚦 Светофор станции</option>
+                <option value="crossing">🚗 Переезд</option>
+            </select>
+            <button class="btn btn-accent" onclick="addCustomTraObject()">ВНЕСТИ ОБЪЕКТ В БАЗУ</button>        </div>
+
+        <label> Мгновенная фиксация ориентиров по текущей голове поезда:</label>
+        <div class="grid-2" style="margin-bottom: 10px;">
+            <button class="btn btn-warn" onclick="fixObjectInCurrentPoint('vstavka', 'Нейтральная вставка')"> ВСТАВКА</button>
+            <button class="btn btn-danger" onclick="fixObjectInCurrentPoint('speed', 'Ограничение скорости')">️ СКОРОСТЬ</button>
+        </div>
+        <div class="grid-2" style="margin-bottom: 10px;">
+            <button class="btn btn-accent" onclick="fixObjectInCurrentPoint('signal', 'Светофор станции')">🚦 СВЕТОФОР</button>
+            <button class="btn btn-orange" onclick="fixObjectInCurrentPoint('crossing', 'Переезд')">🚗 ПЕРЕЕЗД</button>
+        </div>
+
+        <table class="table-view" id="objectsTraTable">
+            <thead>
+                <tr>
+                    <th>Тип объекта</th>
+                    <th>Место (ЖД)</th>
+                    <th>Дистанция</th>
+                    <th>Действие</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+
+        <button class="btn" style="background: #f9ecec; color: #e63946; font-size: 11px; padding: 6px; margin-top:8px; border: 1px solid #fcd3d3;" onclick="clearObjectsDb()">️ ОЧИСТИТЬ БАЗУ ТРА</button>
+    </div>
+
+    <div class="card">
+        <h3>📂 Загрузка ЖД Маршрута</h3>
+        <label class="btn btn-accent" style="display:block; text-align:center; cursor: pointer;">
+            📂 ОТКРЫТЬ .GPX ИЛИ .GEOJSON
+            <input type="file" style="display:none;" onchange="loadRouteFile(this)">
+        </label>
+        <div id="file-info" style="margin-top: 6px; font-size:11px; color:#606266; text-align:center;"></div>
+    </div>
+
+    <div class="card">
+        <h3>📑 Электронный Журнал ТУ-3</h3>
+        <div class="grid-2">
+            <div><label>Дата явки:</label><input type="date" id="tuDate"></div>
+            <div><label>Время явки:</label><input type="time" id="tuTimeYavka"></div>
+        </div>
+        <div class="grid-2">
+            <div><label>Куда (Плечо):</label><input type="text" id="tuDestination" placeholder="Молодечно"></div>
+            <div><label>Время сдачи:</label><input type="time" id="tuTimeSdacha"></div>
+        </div>
+        <button class="btn btn-accent" onclick="calculateAndSaveTrip()">РАССЧИТАТЬ И ВНЕСТИ В ЖУРНАЛ</button>
+
+        <div style="margin-top: 10px;">
+            <label> Статистика за месяц:</label>            <div id="tuStats" style="font-size: 12px; background:#f9fafc; padding: 8px; border-radius: 6px; line-height: 1.5; border: 1px solid #dcdfe6; border-left: 4px solid var(--success-color);">Поездок не обнаружено.</div>
+        </div>
+
+        <table class="table-view" id="tripsTable">
+            <thead>
+                <tr>
+                    <th>Дата</th>
+                    <th>Плечо</th>
+                    <th>Всего</th>
+                    <th>Ночные</th>
+                    <th>Оплата</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        <button class="btn" style="background: #f9ecec; color: #e63946; font-size: 11px; padding: 6px; margin-top:8px; border: 1px solid #fcd3d3;" onclick="clearTu3Db()">🗑️ ОЧИСТИТЬ ЖУРНАЛ ТУ-3</button>
+    </div>
+
+    <script>
+        const map = L.map('map', { zoomControl: false, markerZoomAnimation: false, fadeAnimation: true }).setView([53.9000, 27.5600], 12);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 20 }).addTo(map);
+
+        let trainMarker = L.circleMarker([53.9000, 27.5600], {color: '#e63946', radius: 6, fillColor: '#ffb703', fillOpacity: 0.9, weight: 2}).addTo(map);
+        let trainMapPolyline = L.polyline([], {color: '#e63946', weight: 6, opacity: 0.85}).addTo(map);
+
+        const canvas = document.getElementById('profileCanvas'); const ctx = canvas.getContext('2d');
+
+        let routeNodes = []; let terrain = []; let objectsDb = []; let tu3Db = [];
+        let trainX = 0; let trainCars = 43; let trainLength = trainCars * 14; 
+        let isManualMode = true; let isReversed = false; 
+        let gpsStatus = "Ожидание активации"; let mapPolyline = null;
+        let isMapUserLocked = false; let mapUnlockTimeout = null;
+
+        let startKm = 827; let startPk = 8; let kmDirection = "up"; 
+        let wakeLock = null; let lastGpsTimestamp = Date.now(); let watchId = null;
+        let audioCtx = null;
+        let audioEnabled = false;
+
+        // ХРАНИЛИЩЕ АУДИО ФАЙЛОВ (IndexedDB)
+        let audioDB = null;
+        let audioFiles = {};
+
+        // Инициализация IndexedDB
+        function initAudioDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('AudioStorage', 1);
+                
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => {
+                    audioDB = request.result;                    resolve();
+                };
+                
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains('audioFiles')) {
+                        db.createObjectStore('audioFiles');
+                    }
+                };
+            });
+        }
+
+        // Загрузка аудио файла
+        function loadAudioFile(type, input) {
+            const file = input.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const transaction = audioDB.transaction(['audioFiles'], 'readwrite');
+                const store = transaction.objectStore('audioFiles');
+                
+                store.put(e.target.result, type);
+                
+                transaction.oncomplete = () => {
+                    audioFiles[type] = e.target.result;
+                    document.getElementById('audioStatus_' + type).innerHTML = '<span style="color:#2a9d8f">✔️ Загружен: ' + file.name + '</span>';
+                    document.getElementById('telemetry').innerHTML = '<span style="color:#2a9d8f">✅ Аудио ' + type + ' загружено</span>';
+                };
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // Получение аудио файла из IndexedDB
+        function getAudioFile(type) {
+            return new Promise((resolve, reject) => {
+                if (audioFiles[type]) {
+                    resolve(audioFiles[type]);
+                    return;
+                }
+                
+                const transaction = audioDB.transaction(['audioFiles'], 'readonly');
+                const store = transaction.objectStore('audioFiles');
+                const request = store.get(type);
+                
+                request.onsuccess = () => {
+                    if (request.result) {
+                        audioFiles[type] = request.result;
+                        resolve(request.result);
+                    } else {                        reject(new Error('Файл не найден'));
+                    }
+                };
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        // ПРОВЕРКА ЗВУКА
+        async function testAudio() {
+            const tel = document.getElementById('telemetry');
+            tel.innerHTML = '<span style="color:#0077b6">⏳ Проверка звука...</span>';
+            
+            try {
+                const audioData = await getAudioFile('vstavka');
+                const blob = new Blob([audioData], { type: 'audio/mpeg' });
+                const audioUrl = URL.createObjectURL(blob);
+                
+                const audio = new Audio(audioUrl);
+                audio.volume = 0.5;
+                
+                audio.addEventListener('canplaythrough', () => {
+                    tel.innerHTML = '<span style="color:#2a9d8f">▶️ Воспроизвожу...</span>';
+                    audio.play().then(() => {
+                        setTimeout(() => {
+                            audio.pause();
+                            audio.currentTime = 0;
+                            URL.revokeObjectURL(audioUrl);
+                            tel.innerHTML = '<span style="color:#2a9d8f">✅ Звук работает!</span>';
+                        }, 2000);
+                    }).catch(err => {
+                        tel.innerHTML = '<span style="color:#e63946">❌ Ошибка: ' + err.message + '</span>';
+                    });
+                });
+                
+                audio.addEventListener('error', (e) => {
+                    tel.innerHTML = '<span style="color:#e63946">❌ Ошибка загрузки файла</span>';
+                });
+                
+                audio.load();
+            } catch (err) {
+                tel.innerHTML = '<span style="color:#e63946">❌ Аудио файл не загружен. Используйте кнопку "Выбрать файл" выше.</span>';
+            }
+        }
+
+        // АКТИВАЦИЯ АУДИО
+        function activateAudio() {
+            isManualMode = false; isMapUserLocked = false;
+            try {
+                window.AudioContext = window.AudioContext || window.webkitAudioContext;
+                if (!audioCtx) {                    audioCtx = new AudioContext();
+                    let buffer = audioCtx.createBuffer(1, 1, 22050);
+                    let source = audioCtx.createBufferSource();
+                    source.buffer = buffer; source.loop = true;
+                    source.connect(audioCtx.destination); source.start(0);
+                } else if (audioCtx.state === 'suspended') { audioCtx.resume(); }
+            } catch(e) {}
+
+            audioEnabled = true;
+            document.getElementById('telemetry').innerHTML = '<span style="color:#2a9d8f">✅ ИНФОРМАТОР АКТИВИРОВАН</span>';
+            speak("Контроль перегона запущен.");
+            requestWakeLock(); startGpsWatch();
+        }
+
+        // ВОСПРОИЗВЕДЕНИЕ АУДИО
+        async function playAudio(type) {
+            if (!audioEnabled) return;
+            
+            try {
+                const audioData = await getAudioFile(type);
+                const blob = new Blob([audioData], { type: 'audio/mpeg' });
+                const audioUrl = URL.createObjectURL(blob);
+                
+                const audio = new Audio(audioUrl);
+                audio.volume = 1.0;
+                audio.play().then(() => {
+                    setTimeout(() => URL.revokeObjectURL(audioUrl), 5000);
+                }).catch(e => console.error("Audio error:", e));
+            } catch (err) {
+                console.error('Audio file not found:', type);
+            }
+        }
+
+        // GPS
+        function startGpsWatch() {
+            if (watchId) navigator.geolocation.clearWatch(watchId);
+            
+            watchId = navigator.geolocation.watchPosition(
+                (p) => {
+                    if(isManualMode) return;
+                    lastGpsTimestamp = Date.now();
+                    document.getElementById('gpsHeartbeatBadge').innerText = "GPS: Спутники БЧ";
+                    document.getElementById('gpsHeartbeatBadge').className = "sys-badge badge-ok";
+
+                    gpsStatus = "Спутники БЧ: Контроль хода";
+                    let lat = p.coords.latitude; let lon = p.coords.longitude;
+
+                    if(routeNodes.length > 0) {
+                        let minDist = Infinity; let geoTrackMeter = 0;
+                        routeNodes.forEach(node => {                            let d = getGeoDistance(lat, lon, node.lat, node.lon);
+                            if(d < minDist) { minDist = d; geoTrackMeter = node.meterMark; }
+                        });
+                        
+                        trainX = isReversed ? ((terrain.length - 1) - geoTrackMeter) : geoTrackMeter;
+                        document.getElementById('manualMeterSlider').value = Math.round(trainX);
+                        document.getElementById('manualMeterInput').value = Math.round(trainX);
+                    }
+                    
+                    updateTrainOnMap();
+
+                    objectsDb.forEach(obj => {
+                        if (document.getElementById('voice_' + obj.type)?.checked) {
+                            let distanceToObj = obj.meterMark - trainX;
+                            if (distanceToObj <= 550 && distanceToObj >= 450 && !obj.spoken) {
+                                playAudio(obj.type);
+                                speak("Внимание! Через 500 метров " + obj.name);
+                                obj.spoken = true;
+                            }
+                            if (Math.abs(distanceToObj) > 700) obj.spoken = false;
+                        }
+                    });
+                }, 
+                (err) => { gpsStatus = "Сбой поиска спутников"; }, 
+                { 
+                    enableHighAccuracy: true,
+                    maximumAge: 0,
+                    timeout: 1000
+                }
+            );
+        }
+
+        function getGeoDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371000; const dLat = (lat2 - lat1) * Math.PI / 180; const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        }
+
+        // ЗАГРУЗКА ФАЙЛОВ
+        function loadRouteFile(input) {
+            const file = input.files[0]; if(!file) return;
+            document.getElementById('file-info').innerText = "⏳ Анализ структуры...";
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    let text = e.target.result.trim(); let pts = [];
+                    if (mapPolyline) map.removeLayer(mapPolyline);
+
+                    if (text.startsWith("<?xml") || text.includes("<gpx")) {
+                        let parser = new DOMParser(); let xml = parser.parseFromString(text, "text/xml");                        let xmlNodes = xml.getElementsByTagName("trkpt");
+                        for(let i=0; i<xmlNodes.length; i++) {
+                            let lat = parseFloat(xmlNodes[i].getAttribute("lat")); let lon = parseFloat(xmlNodes[i].getAttribute("lon"));
+                            let eleNode = xmlNodes[i].getElementsByTagName("ele")[0];
+                            if(!isNaN(lat) && !isNaN(lon)) pts.push({lat, lon, h: eleNode ? parseFloat(eleNode.textContent) : 150});
+                        }
+                    } else {
+                        let json = JSON.parse(text);
+                        let features = json.features ? json.features : (Array.isArray(json) ? json : [json]);
+                        features.forEach(f => {
+                            let geom = f.geometry || f; let coords = geom.coordinates || [];
+                            coords.forEach(c => { pts.push({ lat: c[1], lon: c[0], h: c[2] || 150 }); });
+                        });
+                    }
+
+                    routeNodes = []; terrain = []; let totalM = 0;
+                    for(let i=0; i<pts.length; i++) {
+                        if(i > 0) totalM += getGeoDistance(pts[i-1].lat, pts[i-1].lon, pts[i].lat, pts[i].lon);
+                        routeNodes.push({ lat: pts[i].lat, lon: pts[i].lon, height: pts[i].h, meterMark: totalM });
+                    }
+
+                    let currIdx = 0;
+                    for(let m=0; m<=totalM; m++) {
+                        while(currIdx < routeNodes.length - 1 && routeNodes[currIdx+1].meterMark < m) currIdx++;
+                        let p1 = routeNodes[currIdx]; let p2 = routeNodes[currIdx+1] || p1;
+                        terrain.push(p2.meterMark !== p1.meterMark ? (p1.height + ((m - p1.meterMark) / (p2.meterMark - p1.meterMark)) * (p2.height - p1.height)) : p1.height);
+                    }
+
+                    mapPolyline = L.polyline(routeNodes.map(n => [n.lat, n.lon]), {color: '#0077b6', weight: 4, opacity: 0.6}).addTo(map);
+                    map.fitBounds(mapPolyline.getBounds());
+                    document.getElementById('manualMeterSlider').max = Math.round(totalM);
+                    document.getElementById('file-info').innerHTML = `<span style="color:var(--success-color)">✔️ Дистанция: ${(totalM/1000).toFixed(1)} км.</span>`;
+                    setManualMetrage(0); recalculateObjectsMeterMarks(); recreateMapMarkers(); renderTraTable();
+                } catch(err) { document.getElementById('file-info').innerText = "❌ Ошибка разбора."; }
+            };
+            reader.readAsText(file);
+        }
+
+        function updateKilometerSettings() {
+            startKm = parseInt(document.getElementById('startKmInput').value) || 0;
+            startPk = parseInt(document.getElementById('startPkInput').value) || 1;
+            kmDirection = document.getElementById('kmDirectionSelect').value;
+            localStorage.setItem('bch_km_start', startKm);
+            localStorage.setItem('bch_pk_start', startPk);
+            localStorage.setItem('bch_km_dir', kmDirection);
+            recalculateObjectsMeterMarks(); recreateMapMarkers(); renderTraTable(); updateTrainOnMap();
+        }
+
+        function formatMeterToRailwayStyle(metersFromStart) {
+            let startInMeters = (startKm * 1000) + ((startPk - 1) * 100);            let targetMeters = (kmDirection === "up") ? (startInMeters + metersFromStart) : (startInMeters - metersFromStart);
+            if (targetMeters < 0) targetMeters = 0;
+            let km = Math.floor(targetMeters / 1000);
+            let pk = Math.floor((targetMeters % 1000) / 100) + 1;
+            if(pk > 10) pk = 10;
+            return `${km} км ${pk} пк`;
+        }
+
+        function calculateKmPkFromMeters(metersFromStart) {
+            let startInMeters = (startKm * 1000) + ((startPk - 1) * 100);
+            let targetMeters = (kmDirection === "up") ? (startInMeters + metersFromStart) : (startInMeters - metersFromStart);
+            if (targetMeters < 0) targetMeters = 0;
+            let km = Math.floor(targetMeters / 1000);
+            let pk = Math.floor((targetMeters % 1000) / 100) + 1;
+            if(pk > 10) pk = 10;
+            return { km, pk };
+        }
+
+        function convertRailwayToMeterMark(km, pk) {
+            let startInMeters = (startKm * 1000) + ((startPk - 1) * 100);
+            let objectInMeters = (km * 1000) + ((pk - 1) * 100);
+            return (kmDirection === "up") ? (objectInMeters - startInMeters) : (startInMeters - objectInMeters);
+        }
+
+        function recalculateObjectsMeterMarks() {
+            objectsDb.forEach(obj => {
+                if (obj.targetKm !== undefined && obj.targetPk !== undefined) {
+                    obj.meterMark = convertRailwayToMeterMark(obj.targetKm, obj.targetPk);
+                }
+            });
+            localStorage.setItem('bch_tra_db', JSON.stringify(objectsDb));
+        }
+
+        function addCustomTraObject() {
+            let name = document.getElementById('manualObjName').value.trim();
+            let km = parseInt(document.getElementById('manualObjKm').value);
+            let pk = parseInt(document.getElementById('manualObjPk').value);
+            let type = document.getElementById('manualObjType').value;
+
+            if(!name) { alert("Введите название объекта!"); return; }
+            if (routeNodes.length === 0) { alert("Сначала загрузите ЖД маршрут!"); return; }
+
+            let calculatedMeter = convertRailwayToMeterMark(km, pk);
+            let color = '#ffb703';
+            if (type === 'speed') color = '#e63946';
+            if (type === 'signal') color = '#0077b6';
+            if (type === 'crossing') color = '#f4a261';
+
+            let maxM = terrain.length - 1;
+            let checkMeter = isReversed ? (maxM - calculatedMeter) : calculatedMeter;            let trackNodeIdx = Math.min(routeNodes.length - 1, Math.max(0, Math.floor((checkMeter / terrain.length) * routeNodes.length)));
+            let trackNode = routeNodes[trackNodeIdx];
+
+            objectsDb.push({
+                name: name, lat: trackNode ? trackNode.lat : 53.9000, lon: trackNode ? trackNode.lon : 27.5600,
+                color: color, type: type, meterMark: calculatedMeter, targetKm: km, targetPk: pk, spoken: false
+            });
+
+            localStorage.setItem('bch_tra_db', JSON.stringify(objectsDb));
+            recreateMapMarkers(); renderTraTable();
+            document.getElementById('manualObjName').value = "";
+            speak("Добавлен объект " + name);
+        }
+
+        function fixObjectInCurrentPoint(type, name) {
+            if (routeNodes.length === 0) { alert("Сначала загрузите ЖД маршрут!"); return; }
+            let maxM = terrain.length - 1;
+            let actualHeadM = isReversed ? (maxM - trainX) : trainX;
+            let coord = calculateKmPkFromMeters(actualHeadM);
+            let color = '#ffb703';
+            if (type === 'speed') color = '#e63946';
+            if (type === 'signal') color = '#0077b6';
+            if (type === 'crossing') color = '#f4a261';
+
+            let headNodeIdx = Math.min(routeNodes.length - 1, Math.floor((actualHeadM / terrain.length) * routeNodes.length));
+            let headNode = routeNodes[headNodeIdx];
+
+            objectsDb.push({ 
+                name: name, lat: headNode ? headNode.lat : 53.9000, lon: headNode ? headNode.lon : 27.5600, 
+                color: color, type: type, meterMark: actualHeadM, targetKm: coord.km, targetPk: coord.pk, spoken: false 
+            });
+            
+            localStorage.setItem('bch_tra_db', JSON.stringify(objectsDb));
+            recreateMapMarkers(); renderTraTable();
+            speak("Фиксация: " + name);
+        }
+
+        function removeTraObject(index) {
+            objectsDb.splice(index, 1); localStorage.setItem('bch_tra_db', JSON.stringify(objectsDb));
+            recreateMapMarkers(); renderTraTable();
+        }
+
+        function renderTraTable() {
+            let tbody = document.querySelector('#objectsTraTable tbody'); tbody.innerHTML = "";
+            objectsDb.sort((a,b) => a.meterMark - b.meterMark).forEach((obj, idx) => {
+                let displayLoc = (obj.targetKm !== undefined) ? `${obj.targetKm} км ${obj.targetPk} пк` : formatMeterToRailwayStyle(obj.meterMark);
+                tbody.innerHTML += `<tr>
+                    <td style="color:${obj.color}"><b>${obj.name}</b></td>
+                    <td><b>${displayLoc}</b></td>
+                    <td>${Math.round(obj.meterMark)} м</td>                    <td><button class="btn btn-danger" style="padding:2px 6px; font-size:10px; margin:0;" onclick="removeTraObject(${idx})">❌</button></td>
+                </tr>`;
+            });
+        }
+
+        function recreateMapMarkers() {
+            map.eachLayer((layer) => { if (layer instanceof L.CircleMarker && layer !== trainMarker) map.removeLayer(layer); });
+            objectsDb.forEach(obj => {
+                let label = (obj.targetKm !== undefined) ? `${obj.targetKm} км ${obj.targetPk} пк` : formatMeterToRailwayStyle(obj.meterMark);
+                L.circleMarker([obj.lat, obj.lon], {color: obj.color, radius: 5, fillColor: obj.color, fillOpacity: 0.8}).addTo(map).bindPopup(`<b>${obj.name}</b><br>${label}`);
+            });
+        }
+
+        function centerMapOnTrainHead() {
+            if (routeNodes.length === 0) return;
+            let maxM = terrain.length - 1;
+            let actualHeadM = isReversed ? (maxM - trainX) : trainX;
+            let headNodeIdx = Math.min(routeNodes.length - 1, Math.floor((actualHeadM / terrain.length) * routeNodes.length));
+            let headNode = routeNodes[headNodeIdx];
+            if (headNode) { isMapUserLocked = false; map.panTo([headNode.lat, headNode.lon], { animate: true, duration: 0.5 }); speak("Карта центрирована"); }
+        }
+
+        function speak(text) {
+            if ('speechSynthesis' in window) {
+                try {
+                    window.speechSynthesis.cancel();
+                    const u = new SpeechSynthesisUtterance(text);
+                    u.lang = 'ru-RU'; u.rate = 0.95; u.pitch = 1.0;
+                    window.speechSynthesis.speak(u);
+                    if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+                } catch (e) { console.error(e); }
+            }
+        }
+
+        function toggleReverse() {
+            if (terrain.length === 0) return;
+            isReversed = !isReversed; trainX = (terrain.length - 1) - trainX; if (trainX < 0) trainX = 0;
+            document.getElementById('manualMeterSlider').value = Math.round(trainX);
+            document.getElementById('manualMeterInput').value = Math.round(trainX);
+            speak("Реверс хода"); updateTrainOnMap();
+        }
+
+        function handleManualScroll(val) { isMapUserLocked = true; setManualMetrage(val); }
+
+        function updateTrainLength(val) {
+            trainCars = parseInt(val) || 1; trainLength = trainCars * 14;
+            document.getElementById('trainCarsInput').value = trainCars; document.getElementById('trainCarsSlider').value = trainCars;
+            document.getElementById('calculatedLengthText').innerText = `Расчетная длина: ${trainLength} м`;
+            updateTrainOnMap();
+        }
+        function setManualMetrage(val) {
+            let m = parseFloat(val) || 0; if(routeNodes.length === 0) return;
+            if(m > terrain.length - 1) m = terrain.length - 1; if(m < 0) m = 0;
+            trainX = m; document.getElementById('manualMeterInput').value = Math.round(m);
+            document.getElementById('manualMeterSlider').value = Math.round(m); updateTrainOnMap();
+        }
+
+        function updateTrainOnMap() {
+            if(routeNodes.length === 0) return;
+            let maxM = terrain.length - 1;
+            
+            let actualHeadM = isReversed ? (maxM - trainX) : trainX;
+            let actualTailM = isReversed ? (actualHeadM + trainLength) : (actualHeadM - trainLength);
+
+            if (actualHeadM < 0) actualHeadM = 0; if (actualHeadM > maxM) actualHeadM = maxM;
+            if (actualTailM < 0) actualTailM = 0; if (actualTailM > maxM) actualTailM = maxM;
+
+            function getCoordsAtMeter(mMark) {
+                if (mMark <= 0) return [routeNodes[0].lat, routeNodes[0].lon];
+                if (mMark >= maxM) return [routeNodes[routeNodes.length - 1].lat, routeNodes[routeNodes.length - 1].lon];
+                
+                let idx = Math.min(routeNodes.length - 1, Math.max(0, Math.floor((mMark / maxM) * routeNodes.length)));
+                while(idx < routeNodes.length - 1 && routeNodes[idx+1].meterMark < mMark) idx++;
+                while(idx > 0 && routeNodes[idx].meterMark > mMark) idx--;
+                
+                let p1 = routeNodes[idx]; let p2 = routeNodes[idx+1] || p1;
+                if (p2.meterMark === p1.meterMark) return [p1.lat, p1.lon];
+                
+                let ratio = (mMark - p1.meterMark) / (p2.meterMark - p1.meterMark);
+                return [p1.lat + (p2.lat - p1.lat) * ratio, p1.lon + (p2.lon - p1.lon) * ratio];
+            }
+
+            let headCoords = getCoordsAtMeter(actualHeadM);
+            let tailCoords = getCoordsAtMeter(actualTailM);
+
+            let startM = Math.min(actualHeadM, actualTailM);
+            let endM = Math.max(actualHeadM, actualTailM);
+
+            let intermediatePoints = [];
+            routeNodes.forEach(node => {
+                if (node.meterMark > startM && node.meterMark < endM) {
+                    intermediatePoints.push([node.lat, node.lon]);
+                }
+            });
+
+            if (actualHeadM > actualTailM) {
+                intermediatePoints.sort((a, b) => {
+                    let idxA = routeNodes.findIndex(n => n.lat === a[0] && n.lon === a[1]);
+                    let idxB = routeNodes.findIndex(n => n.lat === b[0] && n.lon === b[1]);                    return idxB - idxA;
+                });
+            } else {
+                intermediatePoints.sort((a, b) => {
+                    let idxA = routeNodes.findIndex(n => n.lat === a[0] && n.lon === a[1]);
+                    let idxB = routeNodes.findIndex(n => n.lat === b[0] && n.lon === b[1]);
+                    return idxA - idxB;
+                });
+            }
+
+            let trainCoords = [headCoords, ...intermediatePoints, tailCoords];
+
+            trainMarker.setLatLng(headCoords);
+            if(!isMapUserLocked) map.panTo(headCoords, { animate: true, duration: 0.3 });
+            trainMapPolyline.setLatLngs(trainCoords);
+        }
+
+        function drawProfile() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if(terrain.length === 0) {
+                ctx.fillStyle = "#666"; ctx.font = "11px sans-serif";
+                ctx.fillText("Загрузите файл профиля пути для отрисовки рельефа", 15, 65);
+                requestAnimationFrame(drawProfile); return;
+            }
+
+            let viewMeters = 3000; let scale = viewMeters / canvas.width;
+            let offset = trainX - (viewMeters / 2); let maxM = terrain.length - 1;
+            const getActualTerrainMeter = (screenM) => isReversed ? (maxM - screenM) : screenM;
+
+            let minH = Infinity; let maxH = -Infinity;
+            for(let x=0; x<canvas.width; x++) {
+                let actualM = Math.max(0, Math.min(maxM, Math.floor(getActualTerrainMeter(x * scale + offset))));
+                let h = terrain[actualM] || 150; if(h < minH) minH = h; if(h > maxH) maxH = h;
+            }
+            if(maxH - minH < 20) { minH -= 10; maxH += 10; }
+            let hRange = maxH - minH;
+
+            const getScreenY = (screenM) => {
+                let actualM = Math.max(0, Math.min(maxM, Math.floor(getActualTerrainMeter(screenM))));
+                return canvas.height - (((terrain[actualM] || 150) - minH) / hRange) * (canvas.height - 40) - 20;
+            };
+
+            ctx.beginPath(); ctx.strokeStyle = "#eef1f6"; ctx.lineWidth = 1;
+            for(let i=0; i<canvas.width; i+=50) { ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); } ctx.stroke();
+
+            ctx.beginPath(); ctx.strokeStyle = "#0077b6"; ctx.lineWidth = 3;
+            for(let x=0; x<canvas.width; x++) { if(x === 0) ctx.moveTo(x, getScreenY(x * scale + offset)); else ctx.lineTo(x, getScreenY(x * scale + offset)); }
+            ctx.stroke();
+
+            let headScreenM = Math.floor(trainX); let tailScreenM = Math.max(0, Math.floor(trainX - trainLength));            if (headScreenM > tailScreenM) {
+                ctx.beginPath(); ctx.strokeStyle = "rgba(230, 57, 70, 0.4)"; ctx.lineWidth = 8; 
+                ctx.moveTo((tailScreenM - offset) / scale, getScreenY(tailScreenM) - 4);
+                for (let sm = tailScreenM + 5; sm <= headScreenM; sm += 5) ctx.lineTo((sm - offset) / scale, getScreenY(sm) - 4);
+                ctx.stroke();
+            }
+
+            ctx.fillStyle = isManualMode ? "#ff9f1c" : "#e63946"; ctx.beginPath(); ctx.arc(canvas.width / 2, getScreenY(trainX) - 4, 6, 0, Math.PI*2); ctx.fill();
+
+            objectsDb.forEach(obj => {
+                let sX = ((isReversed ? (maxM - obj.meterMark) : obj.meterMark) - offset) / scale;
+                if(sX >= 0 && sX <= canvas.width) {
+                    let sY = getScreenY(isReversed ? (maxM - obj.meterMark) : obj.meterMark);
+                    ctx.fillStyle = obj.color; ctx.fillRect(sX - 1, sY - 25, 2, 25); ctx.beginPath(); ctx.arc(sX, sY - 25, 4, 0, Math.PI*2); ctx.fill();
+                }
+            });
+
+            document.getElementById('telemetry').innerHTML = `
+                🛰️ <b>Режим:</b> ${gpsStatus}<br>
+                🚂 <b>Координата наката состава:</b> <span style="color:var(--accent-color); font-size:16px; font-weight:bold;">${formatMeterToRailwayStyle(trainX)}</span><br>
+                📏 Составность: <b>${trainCars} ваг. (${trainLength} м)</b> | Объектов ТРА: <b>${objectsDb.length} шт.</b>
+            `;
+            requestAnimationFrame(drawProfile);
+        }
+
+        function calculateAndSaveTrip() {
+            let dateStr = document.getElementById('tuDate').value; let yTime = document.getElementById('tuTimeYavka').value;
+            let sTime = document.getElementById('tuTimeSdacha').value; let dest = document.getElementById('tuDestination').value || "Не указано";
+            if(!yTime || !sTime) return;
+            let dYavka = new Date(`${dateStr}T${yTime}`); let dSdacha = new Date(`${dateStr}T${sTime}`);
+            if (dSdacha < dYavka) dYavka.setDate(dSdacha.getDate() + 1);
+            let totalMinutes = (dSdacha - dYavka) / 60000; let nightMinutes = 0; let scan = new Date(dYavka.getTime());
+            while(scan < dSdacha) { let hh = scan.getHours(); if(hh >= 22 || hh < 6) nightMinutes++; scan.setMinutes(scan.getMinutes() + 1); }
+            let totalHours = totalMinutes / 60; let nightHours = nightMinutes / 60; let rate = "35%";
+            if (totalMinutes > 0 && (nightMinutes / totalMinutes) >= 0.5) { rate = "40% (Вся поездка)"; nightHours = totalHours; }
+            tu3Db.push({ date: dateStr, dest, total: totalHours, night: nightHours, rate });
+            localStorage.setItem('bch_tu3_db', JSON.stringify(tu3Db)); renderTu3Table();
+        }
+
+        function renderTu3Table() {
+            let tbody = document.querySelector('#tripsTable tbody'); tbody.innerHTML = "";
+            let sumTotal = 0; let sumNight35 = 0; let sumNight40 = 0;
+            tu3Db.forEach(t => {
+                tbody.innerHTML += `<tr><td>${t.date}</td><td>${t.dest}</td><td>${t.total.toFixed(2)} ч</td><td>${t.night.toFixed(2)} ч</td><td>${t.rate}</td></tr>`;
+                sumTotal += t.total; if(t.rate.includes("40")) sumNight40 += t.night; else sumNight35 += t.night;
+            });
+            document.getElementById('tuStats').innerHTML = `Поездок: <b>${tu3Db.length}</b> | Наработка: <span style="color:var(--accent-color)"><b>${sumTotal.toFixed(2)} ч</b></span><br>Ночные (+35%): <b>${sumNight35.toFixed(2)} ч</b> | Ночные (+40%): <b>${sumNight40.toFixed(2)} ч</b>`;
+        }
+
+        function clearObjectsDb() { if(confirm("Очистить базу ТРА?")) { objectsDb = []; localStorage.removeItem('bch_tra_db'); recreateMapMarkers(); renderTraTable(); } }        function clearTu3Db() { if(confirm("Очистить весь журнал ТУ-3?")) { tu3Db = []; localStorage.removeItem('bch_tu3_db'); renderTu3Table(); } }
+
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    document.getElementById('wakeLockBadge').innerText = "Экран: No Sleep";
+                    document.getElementById('wakeLockBadge').className = "sys-badge badge-ok";
+                }
+            } catch (err) {}
+        }
+
+        map.on('dragstart zoomstart movestart', () => { 
+            isMapUserLocked = true; 
+            clearTimeout(mapUnlockTimeout);
+            mapUnlockTimeout = setTimeout(() => { isMapUserLocked = false; }, 6000);
+        });
+
+        window.onload = async function() { 
+            // Инициализация базы аудио
+            await initAudioDB();
+            
+            drawProfile(); 
+            if ('speechSynthesis' in window) {
+                let silentUtterance = new SpeechSynthesisUtterance("");
+                silentUtterance.volume = 0; window.speechSynthesis.speak(silentUtterance);
+            }
+            
+            if(localStorage.getItem('bch_km_start')) startKm = parseInt(localStorage.getItem('bch_km_start'));
+            if(localStorage.getItem('bch_pk_start')) startPk = parseInt(localStorage.getItem('bch_pk_start'));
+            if(localStorage.getItem('bch_km_dir')) kmDirection = localStorage.getItem('bch_km_dir');
+
+            document.getElementById('startKmInput').value = startKm;
+            document.getElementById('startPkInput').value = startPk;
+            document.getElementById('kmDirectionSelect').value = kmDirection;
+
+            if(localStorage.getItem('bch_tra_db')) {
+                try { objectsDb = JSON.parse(localStorage.getItem('bch_tra_db')); setTimeout(() => { recreateMapMarkers(); renderTraTable(); }, 600); } catch(e) { objectsDb = []; }
+            }
+            if(localStorage.getItem('bch_tu3_db')) {
+                try { tu3Db = JSON.parse(localStorage.getItem('bch_tu3_db')); renderTu3Table(); } catch(e) { tu3Db = []; }
+            }
+        };
+    </script>
+</body>
+</html>
